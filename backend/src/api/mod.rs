@@ -12,14 +12,15 @@ use axum::{
     Router,
 };
 
-use crate::state::Db;
+use crate::app::AppState;
 
 /// Build the full `/api/v1` router.
-pub fn router() -> Router<Db> {
+pub fn router() -> Router<AppState> {
     Router::new()
         // system
         .route("/system", get(system::get_system))
         .route("/system/stats", get(system::get_stats))
+        .route("/system/telemetry", get(system::get_telemetry_source))
         .route("/system/reboot", post(system::reboot))
         .route("/system/shutdown", post(system::shutdown))
         .route("/alerts", get(system::list_alerts))

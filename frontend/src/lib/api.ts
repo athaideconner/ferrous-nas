@@ -180,6 +180,7 @@ const del = <T>(path: string) => req<T>(path, { method: "DELETE" });
 
 export const api = {
   system: () => req<SystemInfo>("/system"),
+  telemetrySource: () => req<{ source: string }>("/system/telemetry"),
   stats: (points = 60) => req<StatPoint[]>(`/system/stats?points=${points}`),
   reboot: () => post<{ ok: boolean }>("/system/reboot"),
   shutdown: () => post<{ ok: boolean }>("/system/shutdown"),

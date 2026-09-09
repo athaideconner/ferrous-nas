@@ -64,6 +64,7 @@ The migration path — one subsystem at a time, behind a backend trait — is in
 [ARCHITECTURE.md](ARCHITECTURE.md#from-mock-to-real). Recommended order:
 
 1. **Read-only real telemetry** — system stats, `lsblk`, `smartctl` (safe).
+   ✅ **Done** — set `FERROUS_TELEMETRY=linux`. See ARCHITECTURE.md.
 2. **Docker apps** via the Docker socket (high value, low risk).
 3. **Shares** — generate `smb.conf` / `exports`, reload the services.
 4. **Pools/datasets** last — this is the destructive one; gate it hard.

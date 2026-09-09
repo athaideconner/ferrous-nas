@@ -10,9 +10,15 @@ use serde_json::{json, Value};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Alert, StatPoint, SystemInfo};
 use crate::state::Db;
+use crate::telemetry::TelemetryRef;
 
-pub async fn get_system(State(db): State<Db>) -> Json<SystemInfo> {
-    Json(db.read().await.system_info())
+pub async fn get_system(State(tel): State<TelemetryRef>) -> Json<SystemInfo> {
+    Json(tel.system_info().await)
+}
+
+/// Reports which telemetry source is active ("mock" or "linux").
+pub async fn get_telemetry_source(State(tel): State<TelemetryRef>) -> Json<Value> {
+    Json(json!({ "source": tel.source() }))
 }
 
 #[derive(Deserialize)]
@@ -24,9 +30,9 @@ fn default_points() -> usize {
     60
 }
 
-pub async fn get_stats(State(db): State<Db>, Query(q): Query<StatsQuery>) -> Json<Vec<StatPoint>> {
+pub async fn get_stats(State(tel): State<TelemetryRef>, Query(q): Query<StatsQuery>) -> Json<Vec<StatPoint>> {
     let points = q.points.clamp(2, 240);
-    Json(db.read().await.stats_history(points))
+    Json(tel.stats_history(points).await)
 }
 
 pub async fn reboot() -> Json<Value> {

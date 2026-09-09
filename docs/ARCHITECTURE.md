@@ -54,21 +54,43 @@ src/
 Live pages (Dashboard, Apps, Network) poll on an interval; the poll refetches
 *silently* so the UI never flickers.
 
-## From mock to real
+## Telemetry: the first real subsystem
 
-Each domain is a thin handler over `Store`. To make one real, replace the
-`Store` reads/writes for that domain with calls to the OS, keeping the same API
-shape so the dashboard is unchanged:
+The read-only telemetry subsystem is **implemented** and shows the migration
+pattern for everything else. It lives behind a trait:
 
-| Domain | Real backing |
-|--------|--------------|
-| system / stats | `/proc`, `sysinfo`, `sysfs` hwmon for temps |
-| disks / S.M.A.R.T. | `lsblk --json`, `smartctl --json` |
-| pools / datasets | `zfs`/`zpool` (or `mdadm` + `btrfs`) via a command runner |
-| shares | render `/etc/samba/smb.conf` + `/etc/exports`, reload `smbd`/`nfsd` |
-| apps | the Docker Engine API (`/var/run/docker.sock`) |
-| users / groups | `useradd`/`smbpasswd`, or PAM |
-| power | `systemctl reboot` / `poweroff` |
+```
+telemetry/
+  mod.rs     trait Telemetry + MockTelemetry (default) + build() selector
+  linux.rs   LinuxTelemetry — reads /proc, sysfs, lsblk, smartctl (read-only)
+```
+
+`Telemetry` has three methods — `system_info`, `stats_history`, `disks` — and
+the daemon picks an implementation at boot from `FERROUS_TELEMETRY`
+(`linux`/`real` → real host, anything else → mock). Handlers extract the source
+via `State<TelemetryRef>`; the composite [`AppState`](../backend/src/app.rs)
+uses `FromRef` so DB-backed handlers keep extracting `State<Db>` unchanged.
+
+`LinuxTelemetry` keeps a small in-memory ring buffer + previous `/proc/stat`,
+`/proc/net/dev` and `/proc/diskstats` snapshots to compute CPU %, and network /
+disk throughput from counter deltas. It is strictly read-only and falls back to
+the mock if `/proc/stat` can't be read.
+
+## From mock to real (remaining subsystems)
+
+Each remaining domain is a thin handler over `Store`. To make one real, add a
+trait like `Telemetry` with a `Mock*` and a real impl, keeping the API shape so
+the dashboard is unchanged:
+
+| Domain | Status | Real backing |
+|--------|--------|--------------|
+| system / stats | ✅ done | `/proc` (stat, meminfo, loadavg, uptime, cpuinfo), `sysfs` hwmon |
+| disks / S.M.A.R.T. | ✅ done | `lsblk --json`, `smartctl --json` |
+| pools / datasets | mocked | `zfs`/`zpool` (or `mdadm` + `btrfs`) via a command runner |
+| shares | mocked | render `/etc/samba/smb.conf` + `/etc/exports`, reload `smbd`/`nfsd` |
+| apps | mocked | the Docker Engine API (`/var/run/docker.sock`) |
+| users / groups | mocked | `useradd`/`smbpasswd`, or PAM |
+| power | mocked | `systemctl reboot` / `poweroff` |
 
 A clean way to stage this: put a `trait StorageBackend` (etc.) behind the
 handlers, with a `MockBackend` (today) and a `ZfsBackend` (later), chosen by an
@@ -84,6 +106,7 @@ with an appropriate status.
 |--------|------|---------|
 | GET | `/system` | host info, CPU, memory, load |
 | GET | `/system/stats?points=N` | rolling time-series for charts |
+| GET | `/system/telemetry` | active telemetry source (`mock` / `linux`) |
 | POST | `/system/reboot`, `/system/shutdown` | mock power actions |
 | GET | `/alerts` · POST `/alerts/:id/ack` | notifications |
 | GET | `/storage/disks` | physical disks + S.M.A.R.T. |

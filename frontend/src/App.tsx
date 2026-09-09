@@ -1,4 +1,6 @@
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { api } from "./lib/api";
+import { useAsync } from "./lib/hooks";
 import { Toasts } from "./components/ui";
 import Dashboard from "./pages/Dashboard";
 import Storage from "./pages/Storage";
@@ -31,6 +33,8 @@ const TITLES: Record<string, string> = {
 export default function App() {
   const loc = useLocation();
   const title = TITLES[loc.pathname] ?? "FerrousNAS";
+  const tel = useAsync(api.telemetrySource);
+  const live = tel.data?.source === "linux";
 
   return (
     <div className="app">
@@ -61,6 +65,10 @@ export default function App() {
         <header className="topbar">
           <h1>{title}</h1>
           <div className="spacer" />
+          <span className="pill" title={live ? "Reading real host telemetry (read-only)" : "Telemetry is simulated"}>
+            <span className="dot" style={{ background: live ? "var(--green)" : "var(--yellow)", boxShadow: `0 0 8px ${live ? "var(--green)" : "var(--yellow)"}` }} />
+            telemetry: {tel.data?.source ?? "…"}
+          </span>
           <span className="pill">
             <span className="dot" /> System healthy
           </span>

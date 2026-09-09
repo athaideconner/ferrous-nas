@@ -9,11 +9,14 @@ use axum::{
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 use crate::state::Db;
+use crate::telemetry::TelemetryRef;
 
 const GB: u64 = 1_000_000_000;
 
-pub async fn list_disks(State(db): State<Db>) -> Json<Vec<Disk>> {
-    Json(db.read().await.disks.clone())
+/// Physical disks come from the telemetry source: the mock store by default,
+/// or real `lsblk`/`smartctl` output when `FERROUS_TELEMETRY=linux`.
+pub async fn list_disks(State(tel): State<TelemetryRef>) -> Json<Vec<Disk>> {
+    Json(tel.disks().await)
 }
 
 pub async fn list_pools(State(db): State<Db>) -> Json<Vec<Pool>> {

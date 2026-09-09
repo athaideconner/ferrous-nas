@@ -6,9 +6,11 @@
 //! every value is seeded and mutated in memory (see `state.rs`).
 
 mod api;
+mod app;
 mod error;
 mod models;
 mod state;
+mod telemetry;
 
 use std::env;
 use std::sync::Arc;
@@ -22,6 +24,7 @@ use tower_http::{
 };
 use tracing_subscriber::{prelude::*, EnvFilter};
 
+use crate::app::AppState;
 use crate::state::{Db, Store};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -35,6 +38,8 @@ async fn main() {
         .init();
 
     let db: Db = Arc::new(RwLock::new(Store::seeded()));
+    let tel = telemetry::build(db.clone());
+    let app_state = AppState { db, tel };
 
     let addr = env::var("FERROUS_ADDR").unwrap_or_else(|_| "0.0.0.0:4200".to_string());
     let web_dir = env::var("FERROUS_WEB_DIR").unwrap_or_else(|_| "../frontend/dist".to_string());
@@ -53,7 +58,7 @@ async fn main() {
         // cross-origin calls. Tighten this for a real deployment.
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(db);
+        .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
