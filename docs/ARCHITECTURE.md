@@ -54,10 +54,24 @@ src/
 Live pages (Dashboard, Apps, Network) poll on an interval; the poll refetches
 *silently* so the UI never flickers.
 
-## Telemetry: the first real subsystem
+## Real subsystems (implemented)
 
-The read-only telemetry subsystem is **implemented** and shows the migration
-pattern for everything else. It lives behind a trait:
+Two subsystems are already backed by real implementations, both following the
+same trait-swap pattern:
+
+- **Telemetry** (read-only) — `FERROUS_TELEMETRY=linux`. Detailed below.
+- **Apps** — `FERROUS_APPS=docker`. An `AppManager` trait
+  ([appmgr/mod.rs](../backend/src/appmgr/mod.rs)) with `MockAppManager`
+  (default) and `DockerAppManager` ([appmgr/docker.rs](../backend/src/appmgr/docker.rs)),
+  which drives the Docker Engine via [bollard](https://crates.io/crates/bollard):
+  pull → create (port published, `com.ferrousnas.*` labels) → start, plus
+  stop/remove. It lists only containers it manages, so it never touches
+  unrelated containers.
+
+### Telemetry
+
+The read-only telemetry subsystem shows the migration pattern. It lives behind
+a trait:
 
 ```
 telemetry/
@@ -88,7 +102,7 @@ the dashboard is unchanged:
 | disks / S.M.A.R.T. | ✅ done | `lsblk --json`, `smartctl --json` |
 | pools / datasets | mocked | `zfs`/`zpool` (or `mdadm` + `btrfs`) via a command runner |
 | shares | mocked | render `/etc/samba/smb.conf` + `/etc/exports`, reload `smbd`/`nfsd` |
-| apps | mocked | the Docker Engine API (`/var/run/docker.sock`) |
+| apps | ✅ done | the Docker Engine API (`/var/run/docker.sock`) via bollard — `FERROUS_APPS=docker` |
 | users / groups | mocked | `useradd`/`smbpasswd`, or PAM |
 | power | mocked | `systemctl reboot` / `poweroff` |
 

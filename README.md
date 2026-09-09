@@ -88,13 +88,21 @@ is a host-level task rather than something this repo builds on its own.
 | `FERROUS_ADDR` | `0.0.0.0:4200` | Address the daemon binds |
 | `FERROUS_WEB_DIR` | `../frontend/dist` | Where to serve the built dashboard from |
 | `FERROUS_TELEMETRY` | _(unset → mock)_ | Set to `linux` (or `real`) to serve **real, read-only** host telemetry — system stats and disks from `/proc`, `sysfs`, `lsblk` and `smartctl`. Everything else stays mocked. |
+| `FERROUS_APPS` | _(unset → mock)_ | Set to `docker` (or `real`) to manage **real containers** via the Docker Engine socket (pull/create/start/stop/remove). Falls back to mock if Docker isn't reachable. |
 | `RUST_LOG` | `info` | Log level |
 
 > **Real telemetry.** `FERROUS_TELEMETRY=linux cargo run` switches system
 > info, live stats and the disk inventory to the actual host (read-only — it
 > never writes anything). Temperatures/S.M.A.R.T. degrade gracefully when
 > sensors aren't present or `smartctl` lacks root. The dashboard's top bar
-> shows which source is active. Pools, shares, apps and users remain mocked.
+> shows which source is active. Pools, shares and users remain mocked.
+
+> **Real apps.** `FERROUS_APPS=docker cargo run` manages actual containers
+> through the Docker Engine socket. FerrousNAS only ever touches containers it
+> created (tagged `com.ferrousnas.*` and named `ferrousnas-<app>`), so it never
+> disturbs unrelated containers. Install pulls the image, creates the container
+> with the app's port published, and starts it. Requires access to
+> `/var/run/docker.sock`; falls back to mock if the daemon isn't reachable.
 
 ## API
 
