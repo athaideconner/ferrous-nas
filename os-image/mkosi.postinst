@@ -1,0 +1,22 @@
+#!/bin/sh
+# Runs inside the image after packages are installed (mkosi calls this).
+# Wires up the FerrousNAS service, a dedicated system user, and first-boot.
+set -eu
+
+echo "==> Configuring FerrousNAS appliance"
+
+# Dedicated unprivileged service account.
+useradd --system --home /var/lib/ferrous-nas --shell /usr/sbin/nologin ferrous || true
+install -d -o ferrous -g ferrous /var/lib/ferrous-nas
+
+# Install the daemon + web assets that mkosi.extra/ placed on the rootfs.
+install -Dm755 /usr/local/bin/ferrous-nasd /usr/local/bin/ferrous-nasd
+install -d /usr/local/share/ferrous-nas/web
+
+# systemd: start the daemon on boot.
+systemctl enable ferrous-nasd.service
+
+# Enable the underlying NAS services a non-mock build would drive.
+systemctl enable smbd nmbd nfs-server docker ssh || true
+
+echo "==> Done. Boot the image and browse to http://<ip>:4200"

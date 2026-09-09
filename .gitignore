@@ -1,0 +1,20 @@
+# Rust
+/backend/target
+**/*.rs.bk
+
+# Node / Vite
+/frontend/node_modules
+/frontend/dist
+npm-debug.log*
+
+# OS image build artifacts
+/os-image/*.raw
+/os-image/*.qcow2
+/os-image/mkosi.extra/usr/local/bin/ferrous-nasd
+/os-image/mkosi.extra/usr/local/share/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

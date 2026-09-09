@@ -1,0 +1,27 @@
+[Unit]
+Description=FerrousNAS control-plane daemon
+Documentation=https://github.com/gorav/ferrous-nas
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ferrous
+Group=ferrous
+# Serve the built dashboard from the install location.
+Environment=FERROUS_ADDR=0.0.0.0:4200
+Environment=FERROUS_WEB_DIR=/usr/local/share/ferrous-nas/web
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/ferrous-nasd
+Restart=on-failure
+RestartSec=2
+
+# Hardening — safe because the mock daemon needs no privileges.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+StateDirectory=ferrous-nas
+
+[Install]
+WantedBy=multi-user.target
