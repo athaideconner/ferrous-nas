@@ -68,4 +68,5 @@ The migration path — one subsystem at a time, behind a backend trait — is in
 2. **Docker apps** via the Docker socket (high value, low risk).
    ✅ **Done** — set `FERROUS_APPS=docker`.
 3. **Shares** — generate `smb.conf` / `exports`, reload the services.
+   ✅ **Done** — set `FERROUS_SHARES=linux`.
 4. **Pools/datasets** last — this is the destructive one; gate it hard.

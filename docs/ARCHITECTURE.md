@@ -56,7 +56,7 @@ Live pages (Dashboard, Apps, Network) poll on an interval; the poll refetches
 
 ## Real subsystems (implemented)
 
-Two subsystems are already backed by real implementations, both following the
+Three subsystems are already backed by real implementations, all following the
 same trait-swap pattern:
 
 - **Telemetry** (read-only) — `FERROUS_TELEMETRY=linux`. Detailed below.
@@ -67,6 +67,16 @@ same trait-swap pattern:
   pull → create (port published, `com.ferrousnas.*` labels) → start, plus
   stop/remove. It lists only containers it manages, so it never touches
   unrelated containers.
+- **Shares** — `FERROUS_SHARES=linux`. A `ShareManager` trait
+  ([sharemgr/mod.rs](../backend/src/sharemgr/mod.rs)) with `MockShareManager`
+  (default) and `LinuxShareManager` ([sharemgr/linux.rs](../backend/src/sharemgr/linux.rs)).
+  Both share the same store-mutation helpers (`do_create`/`do_patch`/`do_delete`)
+  so behaviour can't drift; the Linux one additionally re-renders the full
+  share set to a managed Samba fragment and an `/etc/exports.d` drop-in
+  (written atomically), then reloads `smbd` and `exportfs` best-effort. The
+  store remains the source of truth — config is a pure projection of it, and
+  FerrousNAS never edits `smb.conf`/`/etc/exports` in place. Renderers are
+  unit-tested.
 
 ### Telemetry
 
@@ -101,7 +111,7 @@ the dashboard is unchanged:
 | system / stats | ✅ done | `/proc` (stat, meminfo, loadavg, uptime, cpuinfo), `sysfs` hwmon |
 | disks / S.M.A.R.T. | ✅ done | `lsblk --json`, `smartctl --json` |
 | pools / datasets | mocked | `zfs`/`zpool` (or `mdadm` + `btrfs`) via a command runner |
-| shares | mocked | render `/etc/samba/smb.conf` + `/etc/exports`, reload `smbd`/`nfsd` |
+| shares | ✅ done | render a managed Samba fragment + `/etc/exports.d` drop-in, reload `smbd`/`exportfs` — `FERROUS_SHARES=linux` |
 | apps | ✅ done | the Docker Engine API (`/var/run/docker.sock`) via bollard — `FERROUS_APPS=docker` |
 | users / groups | mocked | `useradd`/`smbpasswd`, or PAM |
 | power | mocked | `systemctl reboot` / `poweroff` |

@@ -10,6 +10,7 @@ mod app;
 mod appmgr;
 mod error;
 mod models;
+mod sharemgr;
 mod state;
 mod telemetry;
 
@@ -41,7 +42,8 @@ async fn main() {
     let db: Db = Arc::new(RwLock::new(Store::seeded()));
     let tel = telemetry::build(db.clone());
     let apps = appmgr::build(db.clone()).await;
-    let app_state = AppState { db, tel, apps };
+    let shares = sharemgr::build(db.clone());
+    let app_state = AppState { db, tel, apps, shares };
 
     let addr = env::var("FERROUS_ADDR").unwrap_or_else(|_| "0.0.0.0:4200".to_string());
     let web_dir = env::var("FERROUS_WEB_DIR").unwrap_or_else(|_| "../frontend/dist".to_string());

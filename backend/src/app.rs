@@ -7,6 +7,7 @@
 use axum::extract::FromRef;
 
 use crate::appmgr::AppManagerRef;
+use crate::sharemgr::ShareManagerRef;
 use crate::state::Db;
 use crate::telemetry::TelemetryRef;
 
@@ -15,6 +16,7 @@ pub struct AppState {
     pub db: Db,
     pub tel: TelemetryRef,
     pub apps: AppManagerRef,
+    pub shares: ShareManagerRef,
 }
 
 impl FromRef<AppState> for Db {
@@ -32,5 +34,11 @@ impl FromRef<AppState> for TelemetryRef {
 impl FromRef<AppState> for AppManagerRef {
     fn from_ref(s: &AppState) -> AppManagerRef {
         s.apps.clone()
+    }
+}
+
+impl FromRef<AppState> for ShareManagerRef {
+    fn from_ref(s: &AppState) -> ShareManagerRef {
+        s.shares.clone()
     }
 }

@@ -89,6 +89,10 @@ is a host-level task rather than something this repo builds on its own.
 | `FERROUS_WEB_DIR` | `../frontend/dist` | Where to serve the built dashboard from |
 | `FERROUS_TELEMETRY` | _(unset → mock)_ | Set to `linux` (or `real`) to serve **real, read-only** host telemetry — system stats and disks from `/proc`, `sysfs`, `lsblk` and `smartctl`. Everything else stays mocked. |
 | `FERROUS_APPS` | _(unset → mock)_ | Set to `docker` (or `real`) to manage **real containers** via the Docker Engine socket (pull/create/start/stop/remove). Falls back to mock if Docker isn't reachable. |
+| `FERROUS_SHARES` | _(unset → mock)_ | Set to `linux` (or `real`) to render **real SMB/NFS config** and reload the services. Falls back to mock if the config files aren't writable. |
+| `FERROUS_SMB_CONF` | `/etc/samba/ferrousnas-shares.conf` | Managed Samba fragment to write |
+| `FERROUS_NFS_EXPORTS` | `/etc/exports.d/ferrousnas.exports` | Managed NFS exports drop-in to write |
+| `FERROUS_SHARES_RELOAD` | `1` | Set to `0` to render share config without reloading `smbd`/`exportfs` |
 | `RUST_LOG` | `info` | Log level |
 
 > **Real telemetry.** `FERROUS_TELEMETRY=linux cargo run` switches system
@@ -103,6 +107,16 @@ is a host-level task rather than something this repo builds on its own.
 > disturbs unrelated containers. Install pulls the image, creates the container
 > with the app's port published, and starts it. Requires access to
 > `/var/run/docker.sock`; falls back to mock if the daemon isn't reachable.
+
+> **Real shares.** `FERROUS_SHARES=linux` renders every enabled share to real
+> Samba/NFS config and reloads the services. FerrousNAS **never edits
+> `smb.conf` or `/etc/exports` in place** — it owns two managed files only: a
+> Samba fragment (activate it by adding `include = /etc/samba/ferrousnas-shares.conf`
+> under `[global]`) and an `/etc/exports.d` drop-in, which `exportfs` picks up
+> automatically. Files are written atomically and regenerated in full from the
+> API state on every change. Point `FERROUS_SMB_CONF`/`FERROUS_NFS_EXPORTS` at
+> a scratch directory with `FERROUS_SHARES_RELOAD=0` to preview the output
+> safely.
 
 ## API
 
