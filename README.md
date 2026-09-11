@@ -4,11 +4,13 @@ A NAS operating-system control plane in the spirit of **TrueNAS** and **CasaOS**
 a Rust system daemon plus a React dashboard for managing storage pools, SMB/NFS
 shares, a Docker-style app store, users, and system health.
 
-> **Everything is mocked.** No real disks are partitioned, no services are
-> reconfigured, no containers are launched. The daemon serves believable,
-> stateful sample data so you can run and explore the whole experience safely on
-> any machine. The code is structured so each mock can be swapped for a real
-> implementation later (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+> **Mocked by default, real when you ask.** Out of the box no disks are
+> partitioned, no services reconfigured and no containers launched — the daemon
+> serves believable, stateful sample data so you can explore the whole
+> experience safely on any machine. Each subsystem can then be switched to a
+> real implementation independently (telemetry, apps, shares, pools — see
+> [Configuration](#configuration)). **Authentication is the exception: it is on
+> by default.**
 
 <br>
 
@@ -23,6 +25,28 @@ shares, a Docker-style app store, users, and system health.
 | **Users** | Users & groups, admin roles |
 | **Network** | Interfaces with addresses and traffic counters |
 | **System** | Host info, simulated power actions, acknowledge-able notifications |
+
+## Authentication
+
+Multi-user, **on by default**, with no default password. On first run the
+dashboard shows a setup screen to create the initial administrator.
+
+- **Sessions, not tokens** — a 256-bit opaque session id in an `HttpOnly`,
+  `SameSite=Strict` cookie: unreadable by JavaScript and revocable server-side.
+  Sessions live in memory, so a restart signs everyone out.
+- **Argon2id** password hashing (OWASP defaults), stored in PHC format in
+  `auth.json` at mode `0600`.
+- **Two roles** — any signed-in user can read; every mutating endpoint requires
+  an administrator.
+- **Login throttling** with exponential backoff, and identical errors for an
+  unknown user and a wrong password so accounts can't be enumerated.
+- **Disabling auth restricts you to loopback.** `FERROUS_AUTH=off` is honoured
+  only when bound to a loopback address; otherwise the daemon refuses to start.
+  An unauthenticated FerrousNAS therefore cannot be exposed to a network.
+
+Serving over plain HTTP on a LAN still leaves the session cookie in the clear —
+put it behind TLS (reverse proxy or a self-signed cert) and set
+`FERROUS_COOKIE_SECURE=1` for anything beyond a trusted network.
 
 ## Architecture
 
@@ -86,6 +110,9 @@ is a host-level task rather than something this repo builds on its own.
 | Env var | Default | Meaning |
 |---------|---------|---------|
 | `FERROUS_ADDR` | `0.0.0.0:4200` | Address the daemon binds |
+| `FERROUS_AUTH` | _(unset → **on**)_ | Set to `off` to disable authentication. The daemon then refuses to bind anything but loopback. |
+| `FERROUS_STATE_DIR` | `/var/lib/ferrous-nas` | Where `auth.json` (users + Argon2id hashes, mode `0600`) is kept |
+| `FERROUS_COOKIE_SECURE` | `0` | Set to `1` when serving over HTTPS to mark the session cookie `Secure` |
 | `FERROUS_WEB_DIR` | `../frontend/dist` | Where to serve the built dashboard from |
 | `FERROUS_TELEMETRY` | _(unset → mock)_ | Set to `linux` (or `real`) to serve **real, read-only** host telemetry — system stats and disks from `/proc`, `sysfs`, `lsblk` and `smartctl`. Everything else stays mocked. |
 | `FERROUS_APPS` | _(unset → mock)_ | Set to `docker` (or `real`) to manage **real containers** via the Docker Engine socket (pull/create/start/stop/remove). Falls back to mock if Docker isn't reachable. |

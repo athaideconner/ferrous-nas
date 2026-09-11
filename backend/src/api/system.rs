@@ -7,6 +7,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::auth::middleware::AdminUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Alert, StatPoint, SystemInfo};
 use crate::state::Db;
@@ -35,12 +36,12 @@ pub async fn get_stats(State(tel): State<TelemetryRef>, Query(q): Query<StatsQue
     Json(tel.stats_history(points).await)
 }
 
-pub async fn reboot() -> Json<Value> {
+pub async fn reboot(_admin: AdminUser) -> Json<Value> {
     // Mocked: we never actually reboot. Return what a real daemon would ack.
     Json(json!({ "ok": true, "action": "reboot", "note": "mock — no action taken" }))
 }
 
-pub async fn shutdown() -> Json<Value> {
+pub async fn shutdown(_admin: AdminUser) -> Json<Value> {
     Json(json!({ "ok": true, "action": "shutdown", "note": "mock — no action taken" }))
 }
 
@@ -48,7 +49,8 @@ pub async fn list_alerts(State(db): State<Db>) -> Json<Vec<Alert>> {
     Json(db.read().await.alerts.clone())
 }
 
-pub async fn ack_alert(State(db): State<Db>, Path(id): Path<String>) -> ApiResult<Json<Alert>> {
+pub async fn ack_alert(
+    _admin: AdminUser,State(db): State<Db>, Path(id): Path<String>) -> ApiResult<Json<Alert>> {
     let mut store = db.write().await;
     let alert = store
         .alerts

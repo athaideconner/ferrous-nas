@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 
+use crate::auth::middleware::AdminUser;
 use crate::error::ApiResult;
 use crate::models::*;
 use crate::poolmgr::PoolManagerRef;
@@ -25,6 +26,7 @@ pub async fn list_pools(State(mgr): State<PoolManagerRef>) -> ApiResult<Json<Vec
 }
 
 pub async fn create_pool(
+    _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     Json(req): Json<CreatePoolReq>,
 ) -> ApiResult<Json<Pool>> {
@@ -32,6 +34,7 @@ pub async fn create_pool(
 }
 
 pub async fn delete_pool(
+    _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -40,6 +43,7 @@ pub async fn delete_pool(
 }
 
 pub async fn scrub_pool(
+    _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Pool>> {
@@ -51,6 +55,7 @@ pub async fn list_datasets(State(mgr): State<PoolManagerRef>) -> ApiResult<Json<
 }
 
 pub async fn create_dataset(
+    _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     Json(req): Json<CreateDatasetReq>,
 ) -> ApiResult<Json<Dataset>> {
@@ -58,6 +63,7 @@ pub async fn create_dataset(
 }
 
 pub async fn delete_dataset(
+    _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {

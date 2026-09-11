@@ -8,6 +8,7 @@ use axum::{
 };
 
 use crate::appmgr::AppManagerRef;
+use crate::auth::middleware::AdminUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 use crate::state::Db;
@@ -22,6 +23,7 @@ pub async fn list_apps(State(mgr): State<AppManagerRef>) -> ApiResult<Json<Vec<I
 }
 
 pub async fn install_app(
+    _admin: AdminUser,
     State(db): State<Db>,
     State(mgr): State<AppManagerRef>,
     Json(req): Json<InstallAppReq>,
@@ -40,15 +42,18 @@ pub async fn install_app(
     Ok(Json(mgr.install(&cat, host_port).await?))
 }
 
-pub async fn start_app(State(mgr): State<AppManagerRef>, Path(id): Path<String>) -> ApiResult<Json<InstalledApp>> {
+pub async fn start_app(
+    _admin: AdminUser,State(mgr): State<AppManagerRef>, Path(id): Path<String>) -> ApiResult<Json<InstalledApp>> {
     Ok(Json(mgr.start(&id).await?))
 }
 
-pub async fn stop_app(State(mgr): State<AppManagerRef>, Path(id): Path<String>) -> ApiResult<Json<InstalledApp>> {
+pub async fn stop_app(
+    _admin: AdminUser,State(mgr): State<AppManagerRef>, Path(id): Path<String>) -> ApiResult<Json<InstalledApp>> {
     Ok(Json(mgr.stop(&id).await?))
 }
 
-pub async fn uninstall_app(State(mgr): State<AppManagerRef>, Path(id): Path<String>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn uninstall_app(
+    _admin: AdminUser,State(mgr): State<AppManagerRef>, Path(id): Path<String>) -> ApiResult<Json<serde_json::Value>> {
     mgr.uninstall(&id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

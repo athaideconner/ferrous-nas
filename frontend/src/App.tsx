@@ -1,7 +1,9 @@
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { api } from "./lib/api";
+import { api, UNAUTHORIZED_EVENT, type User } from "./lib/api";
 import { useAsync } from "./lib/hooks";
-import { Toasts } from "./components/ui";
+import { Spinner, Toasts } from "./components/ui";
+import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Storage from "./pages/Storage";
 import Shares from "./pages/Shares";
@@ -30,7 +32,47 @@ const TITLES: Record<string, string> = {
   "/system": "System",
 };
 
+type Phase = "loading" | "setup" | "login" | "ready";
+
 export default function App() {
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [user, setUser] = useState<User | null>(null);
+
+  const check = useCallback(async () => {
+    try {
+      const status = await api.auth.status();
+      if (status.setup_required) {
+        setPhase("setup");
+        return;
+      }
+      // With auth disabled this still succeeds, returning the local admin.
+      const me = await api.auth.me();
+      setUser(me);
+      setPhase("ready");
+    } catch {
+      setPhase("login");
+    }
+  }, []);
+
+  useEffect(() => {
+    check();
+  }, [check]);
+
+  // Any 401 from anywhere (e.g. an expired session) drops us back to sign-in.
+  useEffect(() => {
+    const onUnauthorized = () => setPhase("login");
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
+
+  if (phase === "loading") return <Spinner />;
+  if (phase === "setup" || phase === "login") {
+    return <Auth mode={phase} onDone={check} />;
+  }
+  return <Shell user={user} onSignedOut={() => { setUser(null); setPhase("login"); }} />;
+}
+
+function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => void }) {
   const loc = useLocation();
   const title = TITLES[loc.pathname] ?? "FerrousNAS";
   const tel = useAsync(api.telemetrySource);
@@ -72,6 +114,23 @@ export default function App() {
           <span className="pill">
             <span className="dot" /> System healthy
           </span>
+          {user && (
+            <span className="pill" title={user.is_admin ? "Administrator" : "Standard user"}>
+              {user.is_admin ? "🛡️" : "👤"} {user.username}
+            </span>
+          )}
+          <button
+            className="btn sm ghost"
+            onClick={async () => {
+              try {
+                await api.auth.logout();
+              } finally {
+                onSignedOut();
+              }
+            }}
+          >
+            Sign out
+          </button>
         </header>
         <div className="content">
           <Routes>

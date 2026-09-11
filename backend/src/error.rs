@@ -16,6 +16,10 @@ pub enum ApiError {
     /// Refused by a safety policy — an unsafe disk, or a destructive operation
     /// attempted while in dry-run mode.
     Forbidden(String),
+    /// Not authenticated (no session, or an expired one).
+    Unauthorized(String),
+    /// Too many failed login attempts.
+    TooManyRequests(String),
 }
 
 impl IntoResponse for ApiError {
@@ -25,6 +29,8 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             ApiError::Conflict(m) => (StatusCode::CONFLICT, m),
             ApiError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
+            ApiError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m),
+            ApiError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
         };
         (status, Json(json!({ "error": msg }))).into_response()
     }

@@ -85,6 +85,7 @@ export default function Users() {
 function NewUserModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
+  const [password, setPassword] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -94,6 +95,7 @@ function NewUserModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
       await api.createUser({
         username,
         full_name: fullName,
+        password,
         is_admin: isAdmin,
         groups: isAdmin ? ["admins"] : ["family"],
       });
@@ -115,12 +117,24 @@ function NewUserModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <span>Full name</span>
         <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Alex Doe" />
       </label>
+      <label className="field">
+        <span>Password</span>
+        <input
+          type="password"
+          value={password}
+          autoComplete="new-password"
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="At least 8 characters"
+        />
+      </label>
       <label className="checkbox" style={{ marginBottom: 4 }}>
         <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} /> Administrator
       </label>
       <div className="actions">
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={busy || !username} onClick={submit}>Create</button>
+        <button className="btn primary" disabled={busy || !username || password.length < 8} onClick={submit}>
+          Create
+        </button>
       </div>
     </Modal>
   );

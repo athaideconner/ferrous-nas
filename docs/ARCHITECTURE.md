@@ -153,8 +153,15 @@ opt in per subsystem.
 Base path: `/api/v1`. All responses are JSON; errors are `{ "error": "..." }`
 with an appropriate status.
 
+Public (no session): `/auth/status`, `/auth/login`, `/auth/logout`, `/setup`.
+Everything else requires a session; every mutating endpoint requires an admin.
+
 | Method | Path | Purpose |
 |--------|------|---------|
+| GET | `/auth/status` | `auth_enabled` / `setup_required` |
+| POST | `/setup` | create the first administrator (once) |
+| POST | `/auth/login` · `/auth/logout` | session lifecycle |
+| GET | `/auth/me` | the signed-in user |
 | GET | `/system` | host info, CPU, memory, load |
 | GET | `/system/stats?points=N` | rolling time-series for charts |
 | GET | `/system/telemetry` | active telemetry source (`mock` / `linux`) |
@@ -172,8 +179,46 @@ with an appropriate status.
 | GET | `/network/interfaces` | NICs |
 | GET | `/healthz` | liveness |
 
+## Authentication
+
+Implemented in [auth/](../backend/src/auth/) and **enabled by default** —
+unlike the subsystem backends, the safe configuration is the one you get by
+doing nothing.
+
+```
+auth/
+  mod.rs         AuthStore: users + Argon2id hashes on disk, sessions in memory
+  password.rs    hashing/verification and password policy (pure)
+  middleware.rs  require_auth layer + CurrentUser / AdminUser extractors
+```
+
+Design decisions worth knowing:
+
+- **Router split, not a path allowlist.** Public routes (status/setup/login/
+  logout) live in one router; everything else is in a second router carrying the
+  `require_auth` layer. A newly added route is therefore protected by
+  construction — there is no allowlist to forget to update.
+- **Authenticate in middleware, authorise in handlers.** The layer only resolves
+  the session and stashes the user in request extensions. Privileged handlers
+  take an `AdminUser` extractor, so the requirement is visible in the signature
+  and can't be silently dropped.
+- **No CORS layer at all.** The dashboard is always same-origin (Vite proxies
+  `/api` in dev; the daemon serves the SPA in production). A permissive policy
+  would also be incompatible with credentialed cookies.
+- **Fail closed.** If the credential store can't be opened, the daemon exits
+  rather than starting without auth. If auth is disabled, it refuses to bind a
+  non-loopback address.
+- **Sessions expire** on a 12h idle and 30d absolute timeout, and are revoked on
+  logout and when the owning user is deleted.
+
+The last administrator can't be deleted (that would lock everyone out), and an
+admin can't delete their own account.
+
 ## Security note
 
-For the mock, CORS is fully permissive and there is no auth — it's meant to run
-on `localhost`. A real deployment must add authentication (session or token),
-lock CORS to the dashboard origin, and run the daemon behind TLS.
+Authentication is in place, but two things are still on the operator:
+
+- **TLS.** Over plain HTTP the session cookie travels in the clear. Run behind a
+  reverse proxy or a self-signed cert and set `FERROUS_COOKIE_SECURE=1`.
+- **Real system access.** Any subsystem switched to a real backend acts with the
+  daemon's privileges; see the pool safety table above before arming that one.

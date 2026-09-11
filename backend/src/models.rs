@@ -310,11 +310,15 @@ pub struct InstallAppReq {
 #[derive(Debug, Deserialize)]
 pub struct CreateUserReq {
     pub username: String,
+    #[serde(default)]
     pub full_name: String,
     #[serde(default)]
     pub is_admin: bool,
     #[serde(default)]
     pub groups: Vec<String>,
+    /// Required when auth is enabled; a user without one cannot log in.
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 /// Convenience for generating short, readable ids in mock data.

@@ -153,12 +153,21 @@ export interface Alert {
 
 // --- core fetch helper ----------------------------------------------------
 
+/** Fired when any call comes back 401 so the app can show the login screen. */
+export const UNAUTHORIZED_EVENT = "ferrous-unauthorized";
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
+    // Send the session cookie. The dashboard is always same-origin: Vite
+    // proxies /api in dev, and the daemon serves the SPA in production.
+    credentials: "same-origin",
     ...init,
   });
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith("/auth/")) {
+      window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+    }
     let detail = res.statusText;
     try {
       const body = await res.json();
@@ -178,7 +187,22 @@ const patch = <T>(path: string, body: unknown) =>
   req<T>(path, { method: "PATCH", body: JSON.stringify(body) });
 const del = <T>(path: string) => req<T>(path, { method: "DELETE" });
 
+export interface AuthStatus {
+  auth_enabled: boolean;
+  setup_required: boolean;
+}
+
 export const api = {
+  auth: {
+    status: () => req<AuthStatus>("/auth/status"),
+    me: () => req<User>("/auth/me"),
+    login: (username: string, password: string) =>
+      post<User>("/auth/login", { username, password }),
+    logout: () => post<{ ok: boolean }>("/auth/logout"),
+    setup: (username: string, full_name: string, password: string) =>
+      post<User>("/setup", { username, full_name, password }),
+  },
+
   system: () => req<SystemInfo>("/system"),
   telemetrySource: () => req<{ source: string }>("/system/telemetry"),
   stats: (points = 60) => req<StatPoint[]>(`/system/stats?points=${points}`),
@@ -228,6 +252,7 @@ export const api = {
   createUser: (body: {
     username: string;
     full_name: string;
+    password?: string;
     is_admin?: boolean;
     groups?: string[];
   }) => post<User>("/users", body),

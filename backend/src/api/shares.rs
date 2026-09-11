@@ -7,6 +7,7 @@ use axum::{
     Json,
 };
 
+use crate::auth::middleware::AdminUser;
 use crate::error::ApiResult;
 use crate::models::*;
 use crate::sharemgr::ShareManagerRef;
@@ -16,6 +17,7 @@ pub async fn list_shares(State(mgr): State<ShareManagerRef>) -> ApiResult<Json<V
 }
 
 pub async fn create_share(
+    _admin: AdminUser,
     State(mgr): State<ShareManagerRef>,
     Json(req): Json<CreateShareReq>,
 ) -> ApiResult<Json<Share>> {
@@ -23,6 +25,7 @@ pub async fn create_share(
 }
 
 pub async fn patch_share(
+    _admin: AdminUser,
     State(mgr): State<ShareManagerRef>,
     Path(id): Path<String>,
     Json(req): Json<PatchShareReq>,
@@ -31,6 +34,7 @@ pub async fn patch_share(
 }
 
 pub async fn delete_share(
+    _admin: AdminUser,
     State(mgr): State<ShareManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {

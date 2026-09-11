@@ -250,6 +250,30 @@ label.field > span { display: block; font-size: 12px; color: var(--text-dim); ma
 .modal h3 { margin: 0 0 16px; }
 .modal .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
+/* ---------- sign-in / setup ---------- */
+
+.auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.auth-card {
+  width: 100%; max-width: 380px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; padding: 26px; box-shadow: var(--shadow);
+}
+.auth-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 20px; }
+.auth-brand .logo {
+  width: 38px; height: 38px; display: grid; place-items: center;
+  border-radius: 10px; font-size: 22px;
+  background: linear-gradient(135deg, var(--accent), #b8502420);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.auth-brand .name { font-weight: 700; font-size: 17px; }
+.auth-brand .ver { font-size: 12px; color: var(--text-faint); }
+.auth-card .btn { width: 100%; justify-content: center; margin-top: 6px; }
+.auth-error {
+  background: var(--red-bg); color: var(--red);
+  border: 1px solid var(--red-bg); border-radius: 9px;
+  padding: 9px 12px; font-size: 13px; margin-bottom: 12px;
+}
+
 .empty { text-align: center; color: var(--text-faint); padding: 40px 0; }
 .spinner { width: 22px; height: 22px; border: 3px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 30px auto; }
 @keyframes spin { to { transform: rotate(360deg); } }

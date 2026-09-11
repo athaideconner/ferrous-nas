@@ -1,6 +1,16 @@
 //! HTTP API surface. Every route is versioned under `/api/v1`.
+//!
+//! The router is split in two:
+//!
+//! * **public** — status/setup/login/logout. No session required.
+//! * **protected** — everything else, behind [`require_auth`].
+//!
+//! Splitting by router rather than by a path allowlist means a newly added
+//! route is protected by construction; you have to deliberately put something
+//! in the public router for it to be reachable without a session.
 
 pub mod apps;
+pub mod auth;
 pub mod network;
 pub mod shares;
 pub mod storage;
@@ -13,10 +23,29 @@ use axum::{
 };
 
 use crate::app::AppState;
+use crate::auth::middleware::require_auth;
+use crate::auth::AuthRef;
 
-/// Build the full `/api/v1` router.
-pub fn router() -> Router<AppState> {
+/// Build the full `/api/v1` router. `auth` is needed to construct the session
+/// middleware layer.
+pub fn router(auth: AuthRef) -> Router<AppState> {
+    public().merge(protected(auth))
+}
+
+/// Reachable without a session.
+fn public() -> Router<AppState> {
     Router::new()
+        .route("/auth/status", get(auth::status))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/logout", post(auth::logout))
+        .route("/setup", post(auth::setup))
+}
+
+/// Requires a valid session (or auth disabled). Mutating handlers additionally
+/// require `AdminUser`.
+fn protected(auth: AuthRef) -> Router<AppState> {
+    Router::new()
+        .route("/auth/me", get(auth::me))
         // system
         .route("/system", get(system::get_system))
         .route("/system/stats", get(system::get_stats))
@@ -47,4 +76,5 @@ pub fn router() -> Router<AppState> {
         .route("/groups", get(users::list_groups))
         // network
         .route("/network/interfaces", get(network::list_interfaces))
+        .layer(axum::middleware::from_fn_with_state(auth, require_auth))
 }
