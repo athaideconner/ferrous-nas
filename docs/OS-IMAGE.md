@@ -36,7 +36,7 @@ cp -r frontend/dist/* os-image/mkosi.extra/usr/local/share/ferrous-nas/web/
 # 3) build + boot the image
 cd os-image
 sudo mkosi build      # -> ferrous-nas.raw (bootable)
-sudo mkosi qemu       # boot it in a VM; browse http://<vm-ip>:4200
+sudo mkosi qemu       # boot it in a VM; browse https://<vm-ip>:4200
 ```
 
 `mkosi.conf` selects Debian bookworm, installs the real NAS services

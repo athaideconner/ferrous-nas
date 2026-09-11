@@ -44,9 +44,31 @@ dashboard shows a setup screen to create the initial administrator.
   only when bound to a loopback address; otherwise the daemon refuses to start.
   An unauthenticated FerrousNAS therefore cannot be exposed to a network.
 
-Serving over plain HTTP on a LAN still leaves the session cookie in the clear —
-put it behind TLS (reverse proxy or a self-signed cert) and set
-`FERROUS_COOKIE_SECURE=1` for anything beyond a trusted network.
+The session cookie is marked `Secure` automatically whenever TLS (below) is
+active, so the default configuration — auth on, TLS on — needs no manual step
+to keep the cookie off the wire in plain text.
+
+## TLS
+
+**On by default**, terminated by the daemon itself — no reverse proxy
+required. On first boot it generates a self-signed certificate covering
+`localhost`, the machine's hostname, and its detected LAN IP, and reuses it on
+every restart (so a browser exception you grant it stays valid).
+
+- **Zero-config HTTPS.** The browser will show a one-time self-signed warning;
+  everything after that — passwords, session cookies — is encrypted.
+- **Bring your own certificate** by setting both `FERROUS_TLS_CERT` and
+  `FERROUS_TLS_KEY` (e.g. a Let's Encrypt or internal-CA cert) — the daemon
+  then skips self-signed generation entirely.
+- **Terminate TLS at a reverse proxy instead** with `FERROUS_TLS=off`. In that
+  case set `FERROUS_COOKIE_SECURE=1` yourself — the daemon can't tell the proxy
+  is handling HTTPS on its behalf, so this doesn't happen automatically.
+- Local development (`scripts/dev.sh`) runs the backend with `FERROUS_TLS=off`:
+  the split Vite-proxy setup puts the browser's own connection on plain HTTP,
+  and browsers only honour `Secure` cookies over their *own* HTTPS connection
+  — see the comment in `frontend/vite.config.ts`. This doesn't affect
+  production, where the daemon serves the built dashboard itself and
+  everything is one HTTPS origin.
 
 ## Architecture
 
@@ -76,10 +98,11 @@ Requires **Rust** (`rustup`) and **Node 18+**.
 # then open http://localhost:5173
 ```
 
-Or run the two halves yourself:
+Or run the two halves yourself (note the `FERROUS_TLS=off` — see
+[TLS](#tls) above for why the split dev setup needs it):
 
 ```bash
-cd backend && cargo run           # http://localhost:4200
+cd backend && FERROUS_TLS=off cargo run     # http://localhost:4200
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
@@ -88,7 +111,8 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 ```bash
 ./scripts/build.sh
 FERROUS_WEB_DIR=frontend/dist backend/target/release/ferrous-nasd
-# open http://localhost:4200  (daemon serves the built dashboard)
+# open https://localhost:4200 — click through the self-signed warning once
+# (daemon serves the built dashboard; see TLS above to use a real certificate)
 ```
 
 Install as a systemd service on a Debian/Ubuntu host:
@@ -111,8 +135,10 @@ is a host-level task rather than something this repo builds on its own.
 |---------|---------|---------|
 | `FERROUS_ADDR` | `0.0.0.0:4200` | Address the daemon binds |
 | `FERROUS_AUTH` | _(unset → **on**)_ | Set to `off` to disable authentication. The daemon then refuses to bind anything but loopback. |
-| `FERROUS_STATE_DIR` | `/var/lib/ferrous-nas` | Where `auth.json` (users + Argon2id hashes, mode `0600`) is kept |
-| `FERROUS_COOKIE_SECURE` | `0` | Set to `1` when serving over HTTPS to mark the session cookie `Secure` |
+| `FERROUS_STATE_DIR` | `/var/lib/ferrous-nas` | Where `auth.json` and the self-signed TLS cert/key are kept |
+| `FERROUS_COOKIE_SECURE` | _(auto)_ | Forced to `1` whenever built-in TLS is active. Set to `1` yourself when terminating TLS at a reverse proxy (`FERROUS_TLS=off`). |
+| `FERROUS_TLS` | _(unset → **on**)_ | Set to `off` to serve plain HTTP (e.g. behind a reverse proxy that terminates TLS itself) |
+| `FERROUS_TLS_CERT` / `FERROUS_TLS_KEY` | _(unset → self-signed)_ | Paths to a real certificate/key. Both or neither — a self-signed pair is generated into `FERROUS_STATE_DIR` when neither is set. |
 | `FERROUS_WEB_DIR` | `../frontend/dist` | Where to serve the built dashboard from |
 | `FERROUS_TELEMETRY` | _(unset → mock)_ | Set to `linux` (or `real`) to serve **real, read-only** host telemetry — system stats and disks from `/proc`, `sysfs`, `lsblk` and `smartctl`. Everything else stays mocked. |
 | `FERROUS_APPS` | _(unset → mock)_ | Set to `docker` (or `real`) to manage **real containers** via the Docker Engine socket (pull/create/start/stop/remove). Falls back to mock if Docker isn't reachable. |
@@ -166,12 +192,14 @@ is a host-level task rather than something this repo builds on its own.
 ## API
 
 Base path `\/api/v1`. Full list in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#api).
-Quick taste:
+Quick taste (`-k` skips verification of the self-signed cert; drop it once
+you've supplied a real one, and add `-b cookies.txt -c cookies.txt` to carry a
+session across calls once auth is set up):
 
 ```bash
-curl localhost:4200/api/v1/system
-curl localhost:4200/api/v1/storage/pools
-curl -X POST localhost:4200/api/v1/apps -d '{"catalog_id":"grafana"}' -H 'content-type: application/json'
+curl -k https://localhost:4200/api/v1/system
+curl -k https://localhost:4200/api/v1/storage/pools
+curl -k -X POST https://localhost:4200/api/v1/apps -d '{"catalog_id":"grafana"}' -H 'content-type: application/json'
 ```
 
 ## License

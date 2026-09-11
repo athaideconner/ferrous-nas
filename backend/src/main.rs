@@ -5,9 +5,10 @@
 //! dashboard as static files.
 //!
 //! Every subsystem is **mocked by default** and can be independently switched
-//! to a real implementation by environment variable (see README). Auth is the
-//! exception: it is **on by default**, and disabling it restricts the daemon to
-//! loopback.
+//! to a real implementation by environment variable (see README). Auth and TLS
+//! are the exceptions: both are **on by default** — auth requires loopback to
+//! disable, and TLS is self-signed out of the box rather than requiring a
+//! reverse proxy.
 
 mod api;
 mod app;
@@ -19,9 +20,11 @@ mod poolmgr;
 mod sharemgr;
 mod state;
 mod telemetry;
+mod tls;
 
 use std::env;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
 
@@ -60,6 +63,33 @@ async fn main() {
              FERROUS_ADDR=127.0.0.1:4200 (current: {addr})."
         );
         exit(1);
+    }
+
+    // TLS is opt-out too: self-signed and generated on first boot unless a
+    // real certificate is supplied, or this is explicitly turned off for a
+    // reverse-proxy deployment.
+    let tls_enabled = env::var("FERROUS_TLS").as_deref() != Ok("off");
+    let tls_config = if tls_enabled {
+        Some(load_tls_config().await.unwrap_or_else(|e| {
+            tracing::error!("refusing to start: {e}");
+            exit(1);
+        }))
+    } else {
+        None
+    };
+    if tls_enabled {
+        // Cookies really are going out over HTTPS now, so mark them Secure —
+        // no manual step needed for the default path. `api::auth` reads this
+        // per-request, so setting it once here before we start serving is
+        // sufficient; it overrides any prior value because TLS being on makes
+        // Secure unconditionally correct.
+        env::set_var("FERROUS_COOKIE_SECURE", "1");
+    } else if auth_enabled && !is_loopback(&addr) {
+        tracing::warn!(
+            "tls: DISABLED on a non-loopback address — the session cookie and every password \
+             submission travel in clear text unless something in front of FerrousNAS terminates \
+             TLS. If that's a reverse proxy, also set FERROUS_COOKIE_SECURE=1."
+        );
     }
 
     let db: Db = Arc::new(RwLock::new(Store::seeded()));
@@ -125,14 +155,83 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind(&addr)
+    let scheme = if tls_enabled { "https" } else { "http" };
+    tracing::info!("FerrousNAS daemon v{VERSION} listening on {scheme}://{addr}");
+    tracing::info!("API base: {scheme}://{addr}/api/v1  •  health: {scheme}://{addr}/healthz");
+
+    match tls_config {
+        Some(config) => {
+            let socket_addr = resolve_addr(&addr)
+                .await
+                .unwrap_or_else(|e| panic!("failed to resolve {addr}: {e}"));
+            axum_server::bind_rustls(socket_addr, config)
+                .serve(app.into_make_service())
+                .await
+                .expect("server error");
+        }
+        None => {
+            let listener = tokio::net::TcpListener::bind(&addr)
+                .await
+                .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
+            axum::serve(listener, app).await.expect("server error");
+        }
+    }
+}
+
+/// Directory the daemon keeps mutable state in — credentials, the self-signed
+/// cert. Each consumer resolves it independently (matching how every other
+/// subsystem reads its own env vars), so this one lives here rather than in
+/// `auth`, which has its own copy for the same reason.
+fn state_dir() -> PathBuf {
+    PathBuf::from(env::var("FERROUS_STATE_DIR").unwrap_or_else(|_| "/var/lib/ferrous-nas".into()))
+}
+
+/// Resolve the cert/key pair to serve: a supplied real certificate if both
+/// paths are set, otherwise a self-signed one generated into the state dir.
+async fn load_tls_config() -> Result<axum_server::tls_rustls::RustlsConfig, String> {
+    use axum_server::tls_rustls::RustlsConfig;
+
+    let cert_env = env::var("FERROUS_TLS_CERT").ok();
+    let key_env = env::var("FERROUS_TLS_KEY").ok();
+
+    let (cert, key) = match (cert_env, key_env) {
+        (Some(c), Some(k)) => {
+            let (c, k) = (PathBuf::from(c), PathBuf::from(k));
+            if !c.exists() {
+                return Err(format!("FERROUS_TLS_CERT does not exist: {}", c.display()));
+            }
+            if !k.exists() {
+                return Err(format!("FERROUS_TLS_KEY does not exist: {}", k.display()));
+            }
+            tracing::info!("tls: using supplied certificate {}", c.display());
+            (c, k)
+        }
+        (None, None) => {
+            let paths = tls::ensure_self_signed(&state_dir())?;
+            (paths.cert, paths.key)
+        }
+        _ => {
+            return Err(
+                "FERROUS_TLS_CERT and FERROUS_TLS_KEY must both be set, or neither (to use a \
+                 self-signed certificate)"
+                    .to_string(),
+            )
+        }
+    };
+
+    RustlsConfig::from_pem_file(&cert, &key)
         .await
-        .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
+        .map_err(|e| format!("loading TLS certificate {}: {e}", cert.display()))
+}
 
-    tracing::info!("FerrousNAS daemon v{VERSION} listening on http://{addr}");
-    tracing::info!("API base: http://{addr}/api/v1  •  health: http://{addr}/healthz");
-
-    axum::serve(listener, app).await.expect("server error");
+/// Resolve a `host:port` string (which may be a hostname, unlike
+/// `SocketAddr::parse`) to a concrete socket address for `axum-server`.
+async fn resolve_addr(addr: &str) -> Result<SocketAddr, String> {
+    tokio::net::lookup_host(addr)
+        .await
+        .map_err(|e| e.to_string())?
+        .next()
+        .ok_or_else(|| format!("no address found for {addr}"))
 }
 
 /// True when the bind address can only be reached from this machine.

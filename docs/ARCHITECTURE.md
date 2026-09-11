@@ -214,11 +214,46 @@ Design decisions worth knowing:
 The last administrator can't be deleted (that would lock everyone out), and an
 admin can't delete their own account.
 
+## TLS
+
+Implemented in [tls.rs](../backend/src/tls.rs) and, like auth, **enabled by
+default**. The daemon terminates TLS itself rather than assuming a reverse
+proxy sits in front of it.
+
+- `ensure_self_signed(state_dir)` generates a cert into `FERROUS_STATE_DIR`
+  only if `tls-cert.pem`/`tls-key.pem` aren't already there — it never
+  regenerates on its own, so a browser exception granted for it survives
+  restarts. The private key is written `0600`, the cert `0644`, both via a
+  temp-file-then-rename so the final path is never briefly world-readable.
+- **SAN selection is a pure, unit-tested function** (`build_sans`) separate
+  from the I/O around it: always `localhost`/`127.0.0.1`/`::1`, plus the
+  machine's hostname (read from `/proc/sys/kernel/hostname`) and its
+  best-guess LAN IP (via the classic UDP-connect trick — no packet is actually
+  sent) when they look like valid identifiers. A garbled hostname degrades to
+  "cert without it" rather than failing generation.
+- `main.rs` wires three modes: self-signed (default), a supplied real
+  certificate (`FERROUS_TLS_CERT` + `FERROUS_TLS_KEY`, both required together),
+  or plain HTTP (`FERROUS_TLS=off`) for a reverse-proxy deployment. Serving is
+  `axum_server::bind_rustls` (rustls, no OpenSSL dependency) instead of
+  `axum::serve` when TLS is active.
+- **The Secure cookie flag is set automatically**, not manually: `main.rs`
+  forces `FERROUS_COOKIE_SECURE=1` into the process environment once it knows
+  TLS is actually active, which `auth::session_cookie` reads per-request. An
+  operator terminating TLS at a proxy (`FERROUS_TLS=off`) sets it themselves,
+  since the daemon has no way to know the proxy is doing that on its behalf.
+- **Local dev is the one place TLS is deliberately off.** `scripts/dev.sh`
+  passes `FERROUS_TLS=off` to the backend. This isn't a shortcut — it's
+  necessary: the split Vite-proxy setup has the browser's own connection on
+  plain `http://localhost:5173`, and browsers only honour a `Secure` cookie
+  over their *own* HTTPS connection, not an upstream's. A Secure cookie set by
+  an HTTPS backend and proxied through plain HTTP would silently fail to
+  persist. Production has no such issue — the daemon serves the built
+  dashboard itself, so there is exactly one origin and it's HTTPS.
+
 ## Security note
 
-Authentication is in place, but two things are still on the operator:
+Authentication and TLS are both on by default, so what remains is operator
+responsibility for one thing:
 
-- **TLS.** Over plain HTTP the session cookie travels in the clear. Run behind a
-  reverse proxy or a self-signed cert and set `FERROUS_COOKIE_SECURE=1`.
 - **Real system access.** Any subsystem switched to a real backend acts with the
   daemon's privileges; see the pool safety table above before arming that one.
