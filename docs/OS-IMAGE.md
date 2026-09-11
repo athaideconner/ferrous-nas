@@ -70,3 +70,5 @@ The migration path — one subsystem at a time, behind a backend trait — is in
 3. **Shares** — generate `smb.conf` / `exports`, reload the services.
    ✅ **Done** — set `FERROUS_SHARES=linux`.
 4. **Pools/datasets** last — this is the destructive one; gate it hard.
+   ✅ **Done** — `FERROUS_POOLS=zfs`, dry-run until
+   `FERROUS_POOLS_DESTRUCTIVE=i-understand`. See ARCHITECTURE.md.

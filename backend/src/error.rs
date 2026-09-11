@@ -13,6 +13,9 @@ pub enum ApiError {
     NotFound(String),
     BadRequest(String),
     Conflict(String),
+    /// Refused by a safety policy — an unsafe disk, or a destructive operation
+    /// attempted while in dry-run mode.
+    Forbidden(String),
 }
 
 impl IntoResponse for ApiError {
@@ -21,6 +24,7 @@ impl IntoResponse for ApiError {
             ApiError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             ApiError::Conflict(m) => (StatusCode::CONFLICT, m),
+            ApiError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
         };
         (status, Json(json!({ "error": msg }))).into_response()
     }

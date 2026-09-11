@@ -93,6 +93,8 @@ is a host-level task rather than something this repo builds on its own.
 | `FERROUS_SMB_CONF` | `/etc/samba/ferrousnas-shares.conf` | Managed Samba fragment to write |
 | `FERROUS_NFS_EXPORTS` | `/etc/exports.d/ferrousnas.exports` | Managed NFS exports drop-in to write |
 | `FERROUS_SHARES_RELOAD` | `1` | Set to `0` to render share config without reloading `smbd`/`exportfs` |
+| `FERROUS_POOLS` | _(unset → mock)_ | Set to `zfs` (or `real`) to drive real `zpool`/`zfs`. **Dry-run unless the next variable is also set.** |
+| `FERROUS_POOLS_DESTRUCTIVE` | _(unset → dry-run)_ | Must be exactly `i-understand` to actually execute `zpool create`, `zpool destroy` and `zfs destroy` |
 | `RUST_LOG` | `info` | Log level |
 
 > **Real telemetry.** `FERROUS_TELEMETRY=linux cargo run` switches system
@@ -117,6 +119,22 @@ is a host-level task rather than something this repo builds on its own.
 > API state on every change. Point `FERROUS_SMB_CONF`/`FERROUS_NFS_EXPORTS` at
 > a scratch directory with `FERROUS_SHARES_RELOAD=0` to preview the output
 > safely.
+
+> ⚠️ **Real pools — this tier can destroy data.** `FERROUS_POOLS=zfs` drives
+> real `zpool`/`zfs`, and is deliberately harder to arm than the others:
+>
+> - **Dry-run by default.** Every validation and disk safety check runs, then
+>   destructive commands are refused with `403` reporting the exact argv.
+>   Actually executing `zpool create` / `zpool destroy` / `zfs destroy`
+>   additionally requires `FERROUS_POOLS_DESTRUCTIVE=i-understand`.
+> - **Disks must prove they're empty.** Any candidate with a partition table,
+>   filesystem signature, child partition, active mount, or that backs `/` is
+>   refused before a single command runs.
+> - **No `-f`.** ZFS's own safety checks are never forced past.
+> - **No shell, and every identifier is validated** — a pool named `-f` is
+>   rejected rather than reaching the CLI as a flag.
+>
+> Non-destructive operations (list, scrub, dataset create) run normally.
 
 ## API
 

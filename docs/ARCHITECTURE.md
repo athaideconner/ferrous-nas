@@ -56,7 +56,7 @@ Live pages (Dashboard, Apps, Network) poll on an interval; the poll refetches
 
 ## Real subsystems (implemented)
 
-Three subsystems are already backed by real implementations, all following the
+Four subsystems are already backed by real implementations, all following the
 same trait-swap pattern:
 
 - **Telemetry** (read-only) — `FERROUS_TELEMETRY=linux`. Detailed below.
@@ -77,6 +77,33 @@ same trait-swap pattern:
   store remains the source of truth — config is a pure projection of it, and
   FerrousNAS never edits `smb.conf`/`/etc/exports` in place. Renderers are
   unit-tested.
+- **Pools & datasets** — `FERROUS_POOLS=zfs`. The destructive tier; see below.
+
+### Pools: the destructive tier
+
+`PoolManager` ([poolmgr/mod.rs](../backend/src/poolmgr/mod.rs)) with
+`MockPoolManager` (default) and `ZfsPoolManager`
+([poolmgr/zfs.rs](../backend/src/poolmgr/zfs.rs)). Because a bug here formats
+disks, the policy lives in its own pure, unit-tested module
+([poolmgr/safety.rs](../backend/src/poolmgr/safety.rs)) and the defences stack:
+
+| Layer | What it stops |
+|---|---|
+| Name validation | Names must start with a letter, so `-f`/`--force` can never reach the CLI as a flag; reserved vdev keywords (`mirror`, `raidz1`, …) and shell/path metacharacters are rejected |
+| argv, never a shell | No interpolation, no shell metacharacter surface |
+| Device-id validation | Disk ids resolve to `[A-Za-z0-9]+` only, so nothing escapes into argv as a path |
+| `check_disk_safe` | Refuses any disk with a partition table, filesystem signature, child partitions, an active mount, or that backs `/` |
+| No `-f` | ZFS's own safety checks are never overridden |
+| Dry-run gate | `zpool create`/`zpool destroy`/`zfs destroy` are refused with `403` + the exact argv unless `FERROUS_POOLS_DESTRUCTIVE=i-understand` |
+
+Checks run **before** the gate, so an unsafe disk is rejected on its own merits
+rather than being masked by dry-run. Non-destructive operations (list, scrub,
+dataset create) are not gated. Command output parsing (`zpool list -v`,
+`zfs list`) is pure and unit-tested against captured fixtures.
+
+> Caveat: enabling this while other subsystems are mocked means dataset ids come
+> from ZFS while shares reference mock dataset ids. For a coherent real system,
+> enable telemetry, pools and shares together.
 
 ### Telemetry
 
@@ -110,7 +137,7 @@ the dashboard is unchanged:
 |--------|--------|--------------|
 | system / stats | ✅ done | `/proc` (stat, meminfo, loadavg, uptime, cpuinfo), `sysfs` hwmon |
 | disks / S.M.A.R.T. | ✅ done | `lsblk --json`, `smartctl --json` |
-| pools / datasets | mocked | `zfs`/`zpool` (or `mdadm` + `btrfs`) via a command runner |
+| pools / datasets | ✅ done | `zpool`/`zfs`, dry-run by default — `FERROUS_POOLS=zfs` |
 | shares | ✅ done | render a managed Samba fragment + `/etc/exports.d` drop-in, reload `smbd`/`exportfs` — `FERROUS_SHARES=linux` |
 | apps | ✅ done | the Docker Engine API (`/var/run/docker.sock`) via bollard — `FERROUS_APPS=docker` |
 | users / groups | mocked | `useradd`/`smbpasswd`, or PAM |
