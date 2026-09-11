@@ -4,6 +4,10 @@
 //! sample data on boot and mutated by the handlers. Because everything lives
 //! behind an `RwLock`, the whole thing is safe to share across the async
 //! runtime. Nothing here touches real disks, services, or containers.
+//!
+//! `users` here only seeds the ephemeral, auth-disabled dev path — real users
+//! and groups live in [`crate::auth::AuthStore`], which is the source of
+//! truth whenever auth is enabled (the default).
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -25,7 +29,6 @@ pub struct Store {
     pub catalog: Vec<CatalogApp>,
     pub apps: Vec<InstalledApp>,
     pub users: Vec<User>,
-    pub groups: Vec<Group>,
     pub interfaces: Vec<NetInterface>,
     pub alerts: Vec<Alert>,
 }
@@ -44,7 +47,7 @@ impl Store {
         let shares = seed_shares(&datasets);
         let catalog = seed_catalog();
         let apps = seed_apps(&catalog);
-        let (users, groups) = seed_users();
+        let users = seed_users();
 
         Store {
             boot: Instant::now(),
@@ -56,7 +59,6 @@ impl Store {
             catalog,
             apps,
             users,
-            groups,
             interfaces: seed_interfaces(),
             alerts: seed_alerts(),
         }
@@ -313,10 +315,8 @@ fn seed_apps(catalog: &[CatalogApp]) -> Vec<InstalledApp> {
     ]
 }
 
-fn seed_users() -> (Vec<User>, Vec<Group>) {
-    let admins = short_id("grp");
-    let family = short_id("grp");
-    let users = vec![
+fn seed_users() -> Vec<User> {
+    vec![
         User {
             id: short_id("user"),
             username: "gorav".to_string(),
@@ -333,12 +333,7 @@ fn seed_users() -> (Vec<User>, Vec<Group>) {
             groups: vec!["family".to_string()],
             created_at: now_iso(),
         },
-    ];
-    let groups = vec![
-        Group { id: admins, name: "admins".to_string(), members: vec!["gorav".to_string()] },
-        Group { id: family, name: "family".to_string(), members: vec!["guest".to_string()] },
-    ];
-    (users, groups)
+    ]
 }
 
 fn seed_interfaces() -> Vec<NetInterface> {

@@ -13,6 +13,7 @@ use crate::powermgr::PowerManagerRef;
 use crate::sharemgr::ShareManagerRef;
 use crate::state::Db;
 use crate::telemetry::TelemetryRef;
+use crate::usermgr::UserOpsRef;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -23,6 +24,7 @@ pub struct AppState {
     pub pools: PoolManagerRef,
     pub power: PowerManagerRef,
     pub auth: AuthRef,
+    pub user_ops: UserOpsRef,
 }
 
 impl FromRef<AppState> for AuthRef {
@@ -64,5 +66,11 @@ impl FromRef<AppState> for PoolManagerRef {
 impl FromRef<AppState> for PowerManagerRef {
     fn from_ref(s: &AppState) -> PowerManagerRef {
         s.power.clone()
+    }
+}
+
+impl FromRef<AppState> for UserOpsRef {
+    fn from_ref(s: &AppState) -> UserOpsRef {
+        s.user_ops.clone()
     }
 }

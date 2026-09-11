@@ -56,7 +56,7 @@ Live pages (Dashboard, Apps, Network) poll on an interval; the poll refetches
 
 ## Real subsystems (implemented)
 
-Five subsystems are already backed by real implementations, all following the
+Six subsystems are already backed by real implementations, all following the
 same trait-swap pattern:
 
 - **Telemetry** (read-only) — `FERROUS_TELEMETRY=linux`. Detailed below.
@@ -86,6 +86,8 @@ same trait-swap pattern:
   reboot doesn't destroy data the way `zpool create` can, so it follows the
   apps/shares risk tier (opt-in, executes immediately) rather than the pools
   one. Every call is already admin-only via the route's `AdminUser` guard.
+- **Users & groups** — `FERROUS_USERS=linux`. Detailed below, alongside
+  Authentication (which owns the dashboard-level accounts this provisions).
 
 ### Pools: the destructive tier
 
@@ -148,7 +150,7 @@ the dashboard is unchanged:
 | pools / datasets | ✅ done | `zpool`/`zfs`, dry-run by default — `FERROUS_POOLS=zfs` |
 | shares | ✅ done | render a managed Samba fragment + `/etc/exports.d` drop-in, reload `smbd`/`exportfs` — `FERROUS_SHARES=linux` |
 | apps | ✅ done | the Docker Engine API (`/var/run/docker.sock`) via bollard — `FERROUS_APPS=docker` |
-| users / groups | mocked | `useradd`/`smbpasswd`, or PAM |
+| users / groups | ✅ done | `useradd`/`groupadd`/`smbpasswd` — `FERROUS_USERS=linux` |
 | power | ✅ done | `systemctl reboot` / `poweroff` — `FERROUS_POWER=systemd` |
 
 A clean way to stage this: put a `trait StorageBackend` (etc.) behind the
@@ -183,7 +185,8 @@ Everything else requires a session; every mutating endpoint requires an admin.
 | GET | `/apps/catalog` | the app store |
 | GET/POST | `/apps` · DELETE `/apps/:id` | installed apps |
 | POST | `/apps/:id/start`, `/apps/:id/stop` | lifecycle |
-| GET/POST | `/users` · DELETE `/users/:id` · GET `/groups` | accounts |
+| GET/POST | `/users` · DELETE `/users/:id` | accounts |
+| GET/POST | `/groups` · DELETE `/groups/:id` | groups (membership computed, not settable directly) |
 | GET | `/network/interfaces` | NICs |
 | GET | `/healthz` | liveness |
 
@@ -221,6 +224,56 @@ Design decisions worth knowing:
 
 The last administrator can't be deleted (that would lock everyone out), and an
 admin can't delete their own account.
+
+## Users & groups: real OS accounts
+
+Real backend at `FERROUS_USERS=linux`, separate from auth on purpose: `auth`
+owns the dashboard-level account (can this person log in to FerrousNAS); this
+is the optional, additional concern of making that identity usable at the OS
+level — a real Unix account and Samba password, so a share's rendered
+`valid users = gorav` ([sharemgr/linux.rs](../backend/src/sharemgr/linux.rs))
+is actually enforceable.
+
+```
+usermgr/
+  mod.rs    UserOps trait + NoopUserOps (default) + build()
+  linux.rs  LinuxUserOps — useradd/userdel/groupadd/groupdel/smbpasswd
+```
+
+- **Groups moved into `AuthStore`, membership computed rather than stored.** A
+  group record is just `{id, name}`; membership is computed on every read by
+  scanning users for that name in their `groups` list, so the two can never
+  drift apart the way a separately-maintained membership list could. Loading
+  an `auth.json` that predates groups (missing key, `None`) seeds the two
+  defaults once; an explicit empty list (`Some(vec![])`, meaning every group
+  was deliberately deleted) is respected and never silently reseeded.
+- **Orchestration lives in the handler, not in either store.** `api::users`
+  calls `AuthStore` first (the dashboard record, source of truth for login),
+  then the active `UserOps` for the OS side — keeping each store focused on
+  one concern.
+- **Failure policy is asymmetric, and deliberately so:**
+  - *Provisioning* a login-capable account and failing to fully create it is a
+    correctness problem: the handler rolls back the dashboard-level user if
+    `provision_user` fails, so there's never a "dashboard login works, no real
+    account" ghost.
+  - *Deprovisioning* and failing to actually remove the OS account is a
+    *security* problem — an account the dashboard believes is gone that can
+    still authenticate. `deprovision_user` failing therefore aborts the
+    deletion entirely (fail closed) rather than proceeding.
+  - An empty Unix *group* left behind after a failed `groupdel` is neither: no
+    principal gains access through a leftover empty group, so that failure is
+    only logged, never fatal to the dashboard-level change.
+- **Idempotent by design.** `useradd`/`groupadd` succeeding or reporting
+  "already exists" both count as success; `userdel`/`groupdel` succeeding or
+  reporting "doesn't exist" both count as success — so deleting a dashboard
+  user created before `FERROUS_USERS` was ever turned on still works cleanly,
+  and enabling it against an already-provisioned account is a no-op. Anything
+  else (busy, primary-group-in-use) is a real error. Exit codes follow the
+  shadow-utils convention shared across distros, with a stderr-text fallback.
+- Every identifier is validated (`auth::validate_username` /
+  `validate_group_name` — the same rules already enforced before a name ever
+  reaches `AuthStore`) before it touches argv; commands are argv vectors,
+  never a shell string.
 
 ## TLS
 

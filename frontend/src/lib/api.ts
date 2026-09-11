@@ -258,6 +258,8 @@ export const api = {
   }) => post<User>("/users", body),
   deleteUser: (id: string) => del<{ ok: boolean }>(`/users/${id}`),
   groups: () => req<Group[]>("/groups"),
+  createGroup: (name: string) => post<Group>("/groups", { name }),
+  deleteGroup: (id: string) => del<{ ok: boolean }>(`/groups/${id}`),
 
   interfaces: () => req<NetInterface[]>("/network/interfaces"),
 };

@@ -22,6 +22,7 @@ mod sharemgr;
 mod state;
 mod telemetry;
 mod tls;
+mod usermgr;
 
 use std::env;
 use std::net::SocketAddr;
@@ -139,13 +140,27 @@ async fn main() {
     let shares = sharemgr::build(db.clone());
     let pools = poolmgr::build(db.clone());
     let power = powermgr::build();
-    let app_state = AppState { db, tel, apps, shares, pools, power, auth: auth.clone() };
+    let user_ops = usermgr::build();
+    let app_state = AppState { db, tel, apps, shares, pools, power, auth: auth.clone(), user_ops };
 
     // Serve the SPA: any unmatched path falls back to index.html so client-side
-    // routing works. If the dist directory is absent (dev without a build),
-    // these routes simply 404 and you use the Vite dev server instead.
+    // routing works. This must be `.fallback()`, not `.not_found_service()` —
+    // the latter is tower-http's API for a custom *error* page and forces the
+    // response to 404 regardless of what the fallback actually served; the
+    // former passes the fallback's real status through, so a genuine
+    // client-side route like /dashboard correctly reports 200.
+    //
+    // `/assets/*` (Vite's hashed JS/CSS output) is registered as its own
+    // plain `ServeDir` with no fallback, ahead of the catch-all below, so a
+    // genuinely missing asset still 404s for real rather than silently
+    // getting the HTML shell back — which the browser would then fail to
+    // parse as whatever content-type it expected. Everything else falls
+    // through to the shell. If the dist directory is absent entirely (dev
+    // without a build), index.html is then missing too, so the fallback
+    // naturally 404s instead — use the Vite dev server.
     let index = format!("{web_dir}/index.html");
-    let spa = ServeDir::new(&web_dir).not_found_service(ServeFile::new(index));
+    let assets = ServeDir::new(format!("{web_dir}/assets"));
+    let spa = ServeDir::new(&web_dir).fallback(ServeFile::new(index));
 
     // No CORS layer: in production the daemon serves the dashboard itself, and
     // in development Vite proxies /api — both are same-origin. A permissive
@@ -153,6 +168,7 @@ async fn main() {
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .nest("/api/v1", api::router(auth))
+        .nest_service("/assets", assets)
         .fallback_service(spa)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

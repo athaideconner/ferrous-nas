@@ -72,3 +72,7 @@ The migration path — one subsystem at a time, behind a backend trait — is in
 4. **Pools/datasets** last — this is the destructive one; gate it hard.
    ✅ **Done** — `FERROUS_POOLS=zfs`, dry-run until
    `FERROUS_POOLS_DESTRUCTIVE=i-understand`. See ARCHITECTURE.md.
+
+Also done, outside the original four: **power** (`FERROUS_POWER=systemd`) and
+**users/groups** (`FERROUS_USERS=linux`, real Unix/Samba accounts). Every
+subsystem this doc originally described as mocked now has a real backend.

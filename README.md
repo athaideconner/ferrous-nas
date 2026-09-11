@@ -22,7 +22,7 @@ shares, a Docker-style app store, users, and system health.
 | **Storage** | Physical disks with S.M.A.R.T. status, create/destroy pools (stripe/mirror/raidz1/raidz2), datasets with quotas & compression, scrub |
 | **Shares** | SMB & NFS shares bound to datasets, enable/disable, read-only/guest access |
 | **Apps** | A 12-app catalog (Jellyfin, Nextcloud, Immich, Pi-hole…) with install / start / stop / uninstall |
-| **Users** | Users & groups, admin roles |
+| **Users** | Users & groups, admin roles (real Unix/Samba accounts via `FERROUS_USERS=linux`) |
 | **Network** | Interfaces with addresses and traffic counters |
 | **System** | Host info, power actions (real via `FERROUS_POWER=systemd`), acknowledge-able notifications |
 
@@ -149,6 +149,7 @@ is a host-level task rather than something this repo builds on its own.
 | `FERROUS_POOLS` | _(unset → mock)_ | Set to `zfs` (or `real`) to drive real `zpool`/`zfs`. **Dry-run unless the next variable is also set.** |
 | `FERROUS_POOLS_DESTRUCTIVE` | _(unset → dry-run)_ | Must be exactly `i-understand` to actually execute `zpool create`, `zpool destroy` and `zfs destroy` |
 | `FERROUS_POWER` | _(unset → mock)_ | Set to `systemd` (or `real`) to make reboot/shutdown run `systemctl reboot`/`poweroff` for real. Falls back to mock if `systemctl` isn't available. |
+| `FERROUS_USERS` | _(unset → mock)_ | Set to `linux` (or `real`) to give dashboard users real Unix accounts and Samba passwords via `useradd`/`groupadd`/`smbpasswd`. Falls back to mock if those tools aren't available. |
 | `RUST_LOG` | `info` | Log level |
 
 > **Real telemetry.** `FERROUS_TELEMETRY=linux cargo run` switches system
@@ -195,6 +196,16 @@ is a host-level task rather than something this repo builds on its own.
 > pools, since a reboot doesn't destroy data the way `zpool create` can. Every
 > call already requires an administrator. Falls back to mock if `systemctl`
 > isn't reachable.
+
+> **Real users.** `FERROUS_USERS=linux` gives each dashboard user a real Unix
+> account (`useradd --system --no-create-home`) and a matching Samba password
+> (`smbpasswd`), so a share's `valid users = gorav` is actually enforceable —
+> not just a mock label. Groups are dashboard-managed (create/delete, with
+> membership computed live from users so it can never drift) and mirrored to
+> real Unix groups when this is on. Deleting a user removes the real account
+> too; failing to confirm that removal blocks the dashboard deletion as well
+> (fail closed — an account the dashboard thinks is gone must not still be
+> able to log in). Falls back to mock if `useradd`/`groupadd` aren't available.
 
 ## API
 

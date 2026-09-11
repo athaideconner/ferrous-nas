@@ -321,6 +321,11 @@ pub struct CreateUserReq {
     pub password: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateGroupReq {
+    pub name: String,
+}
+
 /// Convenience for generating short, readable ids in mock data.
 pub fn short_id(prefix: &str) -> String {
     let u = Uuid::new_v4().simple().to_string();

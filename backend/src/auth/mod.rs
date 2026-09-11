@@ -1,4 +1,4 @@
-//! Authentication: users, password hashes, sessions.
+//! Authentication: users, password hashes, sessions, and groups.
 //!
 //! **Secure by default.** Auth is *on* unless explicitly disabled with
 //! `FERROUS_AUTH=off`, and when it is disabled the daemon refuses to bind
@@ -11,10 +11,16 @@
 //!   `SameSite=Strict` cookie: unreadable by JavaScript and revocable
 //!   server-side. Sessions live in memory only, so a restart logs everyone out
 //!   — correct behaviour for an appliance.
-//! * **Users persist, sessions don't.** Users and their Argon2id hashes are
-//!   written to `<state dir>/auth.json` with mode `0600`.
+//! * **Users and groups persist, sessions don't.** Written to
+//!   `<state dir>/auth.json` with mode `0600`.
 //! * **No default password.** With no admin configured the API reports
 //!   `setup_required` and only the setup endpoint works.
+//! * **Group membership is derived, not stored twice.** A group record is just
+//!   `{id, name}`; membership is computed on read by scanning users for that
+//!   name in their `groups` list, so the two can never drift apart.
+//!
+//! This module owns dashboard-level accounts only. Provisioning the matching
+//! real Unix/Samba account is a separate concern — see [`crate::usermgr`].
 
 pub mod middleware;
 pub mod password;
@@ -32,7 +38,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::error::{ApiError, ApiResult};
-use crate::models::{short_id, User};
+use crate::models::{short_id, Group, User};
 
 pub type AuthRef = std::sync::Arc<AuthStore>;
 
@@ -73,9 +79,32 @@ impl AuthUser {
     }
 }
 
+/// A group's persisted identity. Membership is never stored here — see the
+/// module doc — so this is deliberately just a name behind an id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GroupRecord {
+    id: String,
+    name: String,
+}
+
+/// The two groups a fresh install (or a pre-groups `auth.json` being loaded
+/// for the first time) starts with. Matches the convention the dashboard's
+/// user-creation form already assumes.
+fn default_groups() -> Vec<GroupRecord> {
+    vec![
+        GroupRecord { id: short_id("grp"), name: "admins".to_string() },
+        GroupRecord { id: short_id("grp"), name: "family".to_string() },
+    ]
+}
+
 #[derive(Serialize, Deserialize, Default)]
 struct Persisted {
     users: Vec<AuthUser>,
+    /// `None` distinguishes "this file predates groups" (seed the defaults
+    /// once) from `Some(vec![])` ("every group was deliberately deleted" —
+    /// must NOT be silently reseeded on the next restart).
+    #[serde(default)]
+    groups: Option<Vec<GroupRecord>>,
 }
 
 struct Session {
@@ -93,6 +122,7 @@ struct Throttle {
 #[derive(Default)]
 struct Inner {
     users: Vec<AuthUser>,
+    groups: Vec<GroupRecord>,
     sessions: HashMap<String, Session>,
     throttle: HashMap<String, Throttle>,
 }
@@ -127,10 +157,12 @@ impl AuthStore {
     ) -> Result<Self, String> {
         if !enabled {
             // Ephemeral: seeded from the mock store, nothing written to disk.
+            // Groups are always the two defaults here — there is nowhere for
+            // a deliberate deletion to persist across a restart anyway.
             return Ok(Self {
                 enabled: false,
                 path: None,
-                inner: RwLock::new(Inner { users: seed, ..Default::default() }),
+                inner: RwLock::new(Inner { users: seed, groups: default_groups(), ..Default::default() }),
             });
         }
 
@@ -139,19 +171,19 @@ impl AuthStore {
             fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         }
 
-        let users = if path.exists() {
+        let (users, groups) = if path.exists() {
             let raw = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
             let p: Persisted =
                 serde_json::from_str(&raw).map_err(|e| format!("parsing {}: {e}", path.display()))?;
-            p.users
+            (p.users, p.groups.unwrap_or_else(default_groups))
         } else {
-            Vec::new() // no admin yet -> setup required
+            (Vec::new(), default_groups()) // no admin yet -> setup required
         };
 
         Ok(Self {
             enabled: true,
             path: Some(path),
-            inner: RwLock::new(Inner { users, ..Default::default() }),
+            inner: RwLock::new(Inner { users, groups, ..Default::default() }),
         })
     }
 
@@ -173,6 +205,10 @@ impl AuthStore {
 
     pub async fn list_users(&self) -> Vec<User> {
         self.inner.read().await.users.iter().map(|u| u.to_public()).collect()
+    }
+
+    pub async fn get_user(&self, id: &str) -> Option<User> {
+        self.inner.read().await.users.iter().find(|u| u.id == id).map(|u| u.to_public())
     }
 
     pub async fn create_user(
@@ -200,6 +236,11 @@ impl AuthStore {
         let mut inner = self.inner.write().await;
         if inner.users.iter().any(|u| u.username.eq_ignore_ascii_case(username)) {
             return Err(ApiError::Conflict(format!("user '{username}' already exists")));
+        }
+        for g in &groups {
+            if !inner.groups.iter().any(|r| &r.name == g) {
+                return Err(ApiError::BadRequest(format!("unknown group '{g}'")));
+            }
         }
         let user = AuthUser {
             id: short_id("user"),
@@ -237,6 +278,66 @@ impl AuthStore {
         inner.users.remove(idx);
         // Revoke any sessions the deleted user still holds.
         inner.sessions.retain(|_, s| s.user_id != id);
+        self.persist(&inner)?;
+        Ok(())
+    }
+
+    // -- groups -------------------------------------------------------------
+
+    /// Groups with membership computed live from the current users, so it can
+    /// never drift from what `groups: [...]` on each user actually says.
+    pub async fn list_groups(&self) -> Vec<Group> {
+        let inner = self.inner.read().await;
+        inner
+            .groups
+            .iter()
+            .map(|g| Group {
+                id: g.id.clone(),
+                name: g.name.clone(),
+                members: inner
+                    .users
+                    .iter()
+                    .filter(|u| u.groups.contains(&g.name))
+                    .map(|u| u.username.clone())
+                    .collect(),
+            })
+            .collect()
+    }
+
+    pub async fn get_group(&self, id: &str) -> Option<Group> {
+        self.list_groups().await.into_iter().find(|g| g.id == id)
+    }
+
+    pub async fn create_group(&self, name: &str) -> ApiResult<Group> {
+        let name = name.trim();
+        validate_group_name(name)?;
+
+        let mut inner = self.inner.write().await;
+        if inner.groups.iter().any(|g| g.name.eq_ignore_ascii_case(name)) {
+            return Err(ApiError::Conflict(format!("group '{name}' already exists")));
+        }
+        let record = GroupRecord { id: short_id("grp"), name: name.to_string() };
+        inner.groups.push(record.clone());
+        self.persist(&inner)?;
+        Ok(Group { id: record.id, name: record.name, members: vec![] })
+    }
+
+    pub async fn delete_group(&self, id: &str) -> ApiResult<()> {
+        let mut inner = self.inner.write().await;
+        let idx = inner
+            .groups
+            .iter()
+            .position(|g| g.id == id)
+            .ok_or_else(|| ApiError::NotFound(format!("group {id} not found")))?;
+
+        let name = inner.groups[idx].name.clone();
+        if inner.users.iter().any(|u| u.groups.contains(&name)) {
+            return Err(ApiError::Conflict(
+                "group still has members; remove them from the group first".into(),
+            ));
+        }
+
+        inner.groups.remove(idx);
         self.persist(&inner)?;
         Ok(())
     }
@@ -372,7 +473,7 @@ impl AuthStore {
 
     fn persist(&self, inner: &Inner) -> ApiResult<()> {
         let Some(path) = &self.path else { return Ok(()) };
-        let data = Persisted { users: inner.users.clone() };
+        let data = Persisted { users: inner.users.clone(), groups: Some(inner.groups.clone()) };
         write_private_json(path, &data)
             .map_err(|e| ApiError::BadRequest(format!("saving {}: {e}", path.display())))
     }
@@ -389,16 +490,28 @@ fn random_token() -> String {
 }
 
 pub fn validate_username(name: &str) -> ApiResult<()> {
+    validate_identifier("username", name)
+}
+
+pub fn validate_group_name(name: &str) -> ApiResult<()> {
+    validate_identifier("group name", name)
+}
+
+/// Shared rule set for usernames and group names: both end up as arguments to
+/// real Unix commands (`useradd`, `groupadd` — see [`crate::usermgr`]) when a
+/// real backend is enabled, so a name starting with `-` must never validate,
+/// or it could be read as a flag by those commands.
+fn validate_identifier(kind: &str, name: &str) -> ApiResult<()> {
     if name.is_empty() || name.len() > 32 {
-        return Err(ApiError::BadRequest("username must be 1-32 characters".into()));
+        return Err(ApiError::BadRequest(format!("{kind} must be 1-32 characters")));
     }
     if !name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
-        return Err(ApiError::BadRequest("username must start with a letter".into()));
+        return Err(ApiError::BadRequest(format!("{kind} must start with a letter")));
     }
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
-        return Err(ApiError::BadRequest(
-            "username may only contain letters, digits, and _ - .".into(),
-        ));
+        return Err(ApiError::BadRequest(format!(
+            "{kind} may only contain letters, digits, and _ - ."
+        )));
     }
     Ok(())
 }
@@ -661,5 +774,82 @@ mod tests {
         assert_eq!(s.list_users().await.len(), 1);
         // A user with no hash still cannot log in.
         assert!(s.login("demo", "anything123").await.is_err());
+    }
+
+    #[test]
+    fn group_names_reuse_the_identifier_rules() {
+        assert!(validate_group_name("engineers").is_ok());
+        for bad in ["", "-root", "has space", &"x".repeat(33)] {
+            assert!(validate_group_name(bad).is_err(), "should reject {bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_store_seeds_the_two_default_groups() {
+        let s = temp_store("groups-fresh");
+        let names: Vec<_> = s.list_groups().await.into_iter().map(|g| g.name).collect();
+        assert!(names.contains(&"admins".to_string()));
+        assert!(names.contains(&"family".to_string()));
+    }
+
+    #[tokio::test]
+    async fn a_legacy_file_without_groups_is_seeded_once_not_every_restart() {
+        let path = temp_path("groups-legacy");
+        // Simulate an auth.json written before groups existed.
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"users":[]}"#).unwrap();
+
+        let s = AuthStore::load_at(true, Some(path.clone()), vec![]).unwrap();
+        assert_eq!(s.list_groups().await.len(), 2, "missing key must seed the defaults");
+        s.create_group("extra").await.unwrap();
+
+        // Deleting a default group, then restarting, must NOT bring it back —
+        // the file now has an explicit (non-empty) group list, so `Some(...)`
+        // is respected verbatim rather than falling back to the defaults.
+        let admins = s.list_groups().await.into_iter().find(|g| g.name == "admins").unwrap();
+        s.delete_group(&admins.id).await.unwrap();
+        let after_delete: Vec<_> = s.list_groups().await.into_iter().map(|g| g.name).collect();
+
+        let s2 = AuthStore::load_at(true, Some(path.clone()), vec![]).unwrap();
+        let reloaded: Vec<_> = s2.list_groups().await.into_iter().map(|g| g.name).collect();
+        assert_eq!(reloaded, after_delete, "a deliberately-emptied default must not reappear");
+        assert!(!reloaded.contains(&"admins".to_string()));
+        assert!(reloaded.contains(&"extra".to_string()));
+
+        fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[tokio::test]
+    async fn group_crud_and_case_insensitive_uniqueness() {
+        let s = temp_store("groups-crud");
+        let g = s.create_group("Engineers").await.unwrap();
+        assert_eq!(g.members.len(), 0);
+
+        assert!(s.create_group("engineers").await.is_err(), "must be case-insensitively unique");
+        assert!(s.get_group(&g.id).await.is_some());
+
+        s.delete_group(&g.id).await.unwrap();
+        assert!(s.get_group(&g.id).await.is_none());
+        assert!(s.delete_group(&g.id).await.is_err(), "deleting twice must not succeed silently");
+    }
+
+    #[tokio::test]
+    async fn user_creation_rejects_an_unknown_group() {
+        let s = temp_store("groups-unknown");
+        let err = s.create_user("nell", "Nell", false, vec!["ghosts".into()], Some("a-good-password")).await;
+        assert!(matches!(err, Err(ApiError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn group_membership_is_computed_live_and_blocks_deletion_while_populated() {
+        let s = temp_store("groups-members");
+        let g = s.create_group("crew").await.unwrap();
+        s.create_user("nell", "Nell", false, vec!["crew".into()], Some("a-good-password")).await.unwrap();
+
+        let refreshed = s.get_group(&g.id).await.unwrap();
+        assert_eq!(refreshed.members, vec!["nell".to_string()]);
+
+        // A non-empty group must not be removable out from under its members.
+        assert!(s.delete_group(&g.id).await.is_err());
     }
 }

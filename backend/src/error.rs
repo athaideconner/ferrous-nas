@@ -22,6 +22,30 @@ pub enum ApiError {
     TooManyRequests(String),
 }
 
+impl ApiError {
+    /// The human-readable message, regardless of status — the same text the
+    /// JSON body carries. Useful for logging an `ApiError` without matching
+    /// on every variant just to pull the string back out.
+    pub fn message(&self) -> &str {
+        match self {
+            ApiError::NotFound(m)
+            | ApiError::BadRequest(m)
+            | ApiError::Conflict(m)
+            | ApiError::Forbidden(m)
+            | ApiError::Unauthorized(m)
+            | ApiError::TooManyRequests(m) => m,
+        }
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+
+impl std::error::Error for ApiError {}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, msg) = match self {
