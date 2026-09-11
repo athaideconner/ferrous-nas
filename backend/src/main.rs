@@ -17,6 +17,7 @@ mod auth;
 mod error;
 mod models;
 mod poolmgr;
+mod powermgr;
 mod sharemgr;
 mod state;
 mod telemetry;
@@ -137,7 +138,8 @@ async fn main() {
     let apps = appmgr::build(db.clone()).await;
     let shares = sharemgr::build(db.clone());
     let pools = poolmgr::build(db.clone());
-    let app_state = AppState { db, tel, apps, shares, pools, auth: auth.clone() };
+    let power = powermgr::build();
+    let app_state = AppState { db, tel, apps, shares, pools, power, auth: auth.clone() };
 
     // Serve the SPA: any unmatched path falls back to index.html so client-side
     // routing works. If the dist directory is absent (dev without a build),

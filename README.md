@@ -24,7 +24,7 @@ shares, a Docker-style app store, users, and system health.
 | **Apps** | A 12-app catalog (Jellyfin, Nextcloud, Immich, Pi-hole…) with install / start / stop / uninstall |
 | **Users** | Users & groups, admin roles |
 | **Network** | Interfaces with addresses and traffic counters |
-| **System** | Host info, simulated power actions, acknowledge-able notifications |
+| **System** | Host info, power actions (real via `FERROUS_POWER=systemd`), acknowledge-able notifications |
 
 ## Authentication
 
@@ -148,6 +148,7 @@ is a host-level task rather than something this repo builds on its own.
 | `FERROUS_SHARES_RELOAD` | `1` | Set to `0` to render share config without reloading `smbd`/`exportfs` |
 | `FERROUS_POOLS` | _(unset → mock)_ | Set to `zfs` (or `real`) to drive real `zpool`/`zfs`. **Dry-run unless the next variable is also set.** |
 | `FERROUS_POOLS_DESTRUCTIVE` | _(unset → dry-run)_ | Must be exactly `i-understand` to actually execute `zpool create`, `zpool destroy` and `zfs destroy` |
+| `FERROUS_POWER` | _(unset → mock)_ | Set to `systemd` (or `real`) to make reboot/shutdown run `systemctl reboot`/`poweroff` for real. Falls back to mock if `systemctl` isn't available. |
 | `RUST_LOG` | `info` | Log level |
 
 > **Real telemetry.** `FERROUS_TELEMETRY=linux cargo run` switches system
@@ -188,6 +189,12 @@ is a host-level task rather than something this repo builds on its own.
 >   rejected rather than reaching the CLI as a flag.
 >
 > Non-destructive operations (list, scrub, dataset create) run normally.
+
+> **Real power.** `FERROUS_POWER=systemd` makes reboot/shutdown run
+> `systemctl reboot`/`poweroff` for real, immediately — not dry-run gated like
+> pools, since a reboot doesn't destroy data the way `zpool create` can. Every
+> call already requires an administrator. Falls back to mock if `systemctl`
+> isn't reachable.
 
 ## API
 

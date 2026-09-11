@@ -56,7 +56,7 @@ Live pages (Dashboard, Apps, Network) poll on an interval; the poll refetches
 
 ## Real subsystems (implemented)
 
-Four subsystems are already backed by real implementations, all following the
+Five subsystems are already backed by real implementations, all following the
 same trait-swap pattern:
 
 - **Telemetry** (read-only) — `FERROUS_TELEMETRY=linux`. Detailed below.
@@ -78,6 +78,14 @@ same trait-swap pattern:
   FerrousNAS never edits `smb.conf`/`/etc/exports` in place. Renderers are
   unit-tested.
 - **Pools & datasets** — `FERROUS_POOLS=zfs`. The destructive tier; see below.
+- **Power** — `FERROUS_POWER=systemd`. A `PowerManager` trait
+  ([powermgr/mod.rs](../backend/src/powermgr/mod.rs)) with `MockPowerManager`
+  (default, acknowledges without acting) and `SystemdPowerManager`
+  ([powermgr/systemd.rs](../backend/src/powermgr/systemd.rs)), which runs
+  `systemctl reboot` / `systemctl poweroff`. Not dry-run gated like pools — a
+  reboot doesn't destroy data the way `zpool create` can, so it follows the
+  apps/shares risk tier (opt-in, executes immediately) rather than the pools
+  one. Every call is already admin-only via the route's `AdminUser` guard.
 
 ### Pools: the destructive tier
 
@@ -141,7 +149,7 @@ the dashboard is unchanged:
 | shares | ✅ done | render a managed Samba fragment + `/etc/exports.d` drop-in, reload `smbd`/`exportfs` — `FERROUS_SHARES=linux` |
 | apps | ✅ done | the Docker Engine API (`/var/run/docker.sock`) via bollard — `FERROUS_APPS=docker` |
 | users / groups | mocked | `useradd`/`smbpasswd`, or PAM |
-| power | mocked | `systemctl reboot` / `poweroff` |
+| power | ✅ done | `systemctl reboot` / `poweroff` — `FERROUS_POWER=systemd` |
 
 A clean way to stage this: put a `trait StorageBackend` (etc.) behind the
 handlers, with a `MockBackend` (today) and a `ZfsBackend` (later), chosen by an

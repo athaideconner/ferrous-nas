@@ -9,6 +9,7 @@ use axum::extract::FromRef;
 use crate::appmgr::AppManagerRef;
 use crate::auth::AuthRef;
 use crate::poolmgr::PoolManagerRef;
+use crate::powermgr::PowerManagerRef;
 use crate::sharemgr::ShareManagerRef;
 use crate::state::Db;
 use crate::telemetry::TelemetryRef;
@@ -20,6 +21,7 @@ pub struct AppState {
     pub apps: AppManagerRef,
     pub shares: ShareManagerRef,
     pub pools: PoolManagerRef,
+    pub power: PowerManagerRef,
     pub auth: AuthRef,
 }
 
@@ -56,5 +58,11 @@ impl FromRef<AppState> for ShareManagerRef {
 impl FromRef<AppState> for PoolManagerRef {
     fn from_ref(s: &AppState) -> PoolManagerRef {
         s.pools.clone()
+    }
+}
+
+impl FromRef<AppState> for PowerManagerRef {
+    fn from_ref(s: &AppState) -> PowerManagerRef {
+        s.power.clone()
     }
 }

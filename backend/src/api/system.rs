@@ -1,4 +1,8 @@
-//! System info, live stats, power actions, and alerts. All mocked.
+//! System info, live stats, alerts, and power actions.
+//!
+//! System info/stats come from the active [`TelemetryRef`]; power actions from
+//! the active [`PowerManagerRef`] — mocked by default, real `systemctl` when
+//! `FERROUS_POWER=systemd`. Alerts are still mock data.
 
 use axum::{
     extract::{Path, Query, State},
@@ -10,6 +14,7 @@ use serde_json::{json, Value};
 use crate::auth::middleware::AdminUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Alert, StatPoint, SystemInfo};
+use crate::powermgr::PowerManagerRef;
 use crate::state::Db;
 use crate::telemetry::TelemetryRef;
 
@@ -36,13 +41,14 @@ pub async fn get_stats(State(tel): State<TelemetryRef>, Query(q): Query<StatsQue
     Json(tel.stats_history(points).await)
 }
 
-pub async fn reboot(_admin: AdminUser) -> Json<Value> {
-    // Mocked: we never actually reboot. Return what a real daemon would ack.
-    Json(json!({ "ok": true, "action": "reboot", "note": "mock — no action taken" }))
+pub async fn reboot(_admin: AdminUser, State(mgr): State<PowerManagerRef>) -> ApiResult<Json<Value>> {
+    mgr.reboot().await?;
+    Ok(Json(json!({ "ok": true, "action": "reboot", "source": mgr.source() })))
 }
 
-pub async fn shutdown(_admin: AdminUser) -> Json<Value> {
-    Json(json!({ "ok": true, "action": "shutdown", "note": "mock — no action taken" }))
+pub async fn shutdown(_admin: AdminUser, State(mgr): State<PowerManagerRef>) -> ApiResult<Json<Value>> {
+    mgr.shutdown().await?;
+    Ok(Json(json!({ "ok": true, "action": "shutdown", "source": mgr.source() })))
 }
 
 pub async fn list_alerts(State(db): State<Db>) -> Json<Vec<Alert>> {
