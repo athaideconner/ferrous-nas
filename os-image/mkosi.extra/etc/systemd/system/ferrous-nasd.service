@@ -1,6 +1,6 @@
 [Unit]
 Description=FerrousNAS control-plane daemon
-Documentation=https://github.com/gorav/ferrous-nas
+Documentation=https://github.com/athaideconner/ferrous-nas
 After=network-online.target
 Wants=network-online.target
 
@@ -16,12 +16,23 @@ ExecStart=/usr/local/bin/ferrous-nasd
 Restart=on-failure
 RestartSec=2
 
-# Hardening — safe because the mock daemon needs no privileges.
+# Hardening. ProtectSystem=full (not strict) because the real, opt-in
+# backends need /etc writable: sharemgr::linux (FERROUS_SHARES=linux) writes
+# /etc/samba/ferrousnas-shares.conf and /etc/exports.d/, and usermgr::linux
+# (FERROUS_USERS=linux) needs useradd/groupadd/smbpasswd to update
+# /etc/passwd, /etc/group and /etc/samba/smbpasswd. /usr and /boot stay
+# read-only.
 NoNewPrivileges=yes
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=yes
 PrivateTmp=yes
 StateDirectory=ferrous-nas
+
+# Note: FERROUS_POWER=systemd calls `systemctl reboot`/`poweroff` as this
+# unprivileged service account. On most systems that requires a polkit rule
+# granting org.freedesktop.login1.reboot/power-off to the `ferrous` user —
+# it is not granted by anything in this repo. Without one, real power actions
+# will fail with a permissions error until such a rule is added.
 
 [Install]
 WantedBy=multi-user.target

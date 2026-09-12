@@ -9,9 +9,18 @@ echo "==> Configuring FerrousNAS appliance"
 useradd --system --home /var/lib/ferrous-nas --shell /usr/sbin/nologin ferrous || true
 install -d -o ferrous -g ferrous /var/lib/ferrous-nas
 
-# Install the daemon + web assets that mkosi.extra/ placed on the rootfs.
-install -Dm755 /usr/local/bin/ferrous-nasd /usr/local/bin/ferrous-nasd
+# mkosi.extra/ already placed the daemon binary and web assets on the rootfs
+# at their final paths before this script runs — just make sure the binary
+# is executable.
+chmod 755 /usr/local/bin/ferrous-nasd
 install -d /usr/local/share/ferrous-nas/web
+
+# Wire up the managed Samba fragment sharemgr::linux writes to at runtime
+# (FERROUS_SHARES=linux) so shares work without a manual smb.conf edit.
+# Idempotent: safe to re-run this script.
+if ! grep -q ferrousnas-shares.conf /etc/samba/smb.conf 2>/dev/null; then
+    sed -i '/^\[global\]/a\   include = /etc/samba/ferrousnas-shares.conf' /etc/samba/smb.conf
+fi
 
 # systemd: start the daemon on boot.
 systemctl enable ferrous-nasd.service
@@ -19,4 +28,4 @@ systemctl enable ferrous-nasd.service
 # Enable the underlying NAS services a non-mock build would drive.
 systemctl enable smbd nmbd nfs-server docker ssh || true
 
-echo "==> Done. Boot the image and browse to http://<ip>:4200"
+echo "==> Done. Boot the image and browse to https://<ip>:4200 (self-signed cert)"

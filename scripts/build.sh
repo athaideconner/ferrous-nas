@@ -16,4 +16,4 @@ echo "  binary : backend/target/release/ferrous-nasd"
 echo "  web    : frontend/dist"
 echo
 echo "Run it:  FERROUS_WEB_DIR=frontend/dist backend/target/release/ferrous-nasd"
-echo "Then open http://localhost:4200"
+echo "Then open https://localhost:4200 (self-signed cert — click through the warning once)"

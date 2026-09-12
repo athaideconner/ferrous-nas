@@ -20,30 +20,60 @@ script** layered onto an existing Linux. This repo gives you both options.
 ## Option A — bake an appliance image with mkosi (recommended)
 
 [`mkosi`](https://github.com/systemd/mkosi) builds a bootable Debian image
-declaratively. The config is in [`../os-image/`](../os-image/).
+declaratively. The config is in [`../os-image/`](../os-image/), and the app
+is already built and staged into `mkosi.extra/` — the only step left is the
+one that needs root.
 
-On a Linux host (a VM is fine):
+**From an Arch/CachyOS host** (mkosi drives Debian's `apt` to populate the
+rootfs, so that needs to be present on the host too):
 
 ```bash
-sudo apt install mkosi systemd-container qemu-system-x86 dosfstools zstd
-# 1) build the app first, so the binary + web assets exist to copy in
-./scripts/build.sh
-# 2) stage them into the image overlay
-install -Dm755 backend/target/release/ferrous-nasd \
-  os-image/mkosi.extra/usr/local/bin/ferrous-nasd
-mkdir -p os-image/mkosi.extra/usr/local/share/ferrous-nas/web
-cp -r frontend/dist/* os-image/mkosi.extra/usr/local/share/ferrous-nas/web/
-# 3) build + boot the image
+sudo pacman -S --needed mkosi apt debian-archive-keyring qemu-system-x86
 cd os-image
 sudo mkosi build      # -> ferrous-nas.raw (bootable)
 sudo mkosi qemu       # boot it in a VM; browse https://<vm-ip>:4200
 ```
 
-`mkosi.conf` selects Debian bookworm, installs the real NAS services
-(`zfsutils-linux`, `samba`, `nfs-kernel-server`, `docker.io`, `smartmontools`),
-and `mkosi.postinst` enables the `ferrous-nasd` systemd unit and creates the
-service user. Flash `ferrous-nas.raw` to a disk with `dd` to run on real
-hardware.
+**From a Debian/Ubuntu host:**
+
+```bash
+sudo apt install mkosi systemd-container qemu-system-x86 dosfstools zstd
+cd os-image
+sudo mkosi build
+sudo mkosi qemu
+```
+
+If you're starting from a fresh checkout rather than one where the app is
+already staged, build and stage it first:
+
+```bash
+./scripts/build.sh
+install -Dm755 backend/target/release/ferrous-nasd \
+  os-image/mkosi.extra/usr/local/bin/ferrous-nasd
+mkdir -p os-image/mkosi.extra/usr/local/share/ferrous-nas/web
+cp -r frontend/dist/* os-image/mkosi.extra/usr/local/share/ferrous-nas/web/
+```
+
+`mkosi.conf` selects Debian bookworm (with `contrib` enabled — `zfsutils-linux`
+lives there, not in `main`, since ZFS's CDDL license doesn't qualify), installs
+the real NAS services (`zfsutils-linux`, `samba`, `nfs-kernel-server`,
+`docker.io`, `smartmontools`) plus `systemd-boot-efi` and
+`linux-headers-amd64` (needed for a bootable image and for the ZFS kernel
+module to actually build, respectively — both are easy to miss and only fail
+partway through a real build). `mkosi.postinst` enables the `ferrous-nasd`
+systemd unit, creates the service user, and wires the managed Samba include
+line so `FERROUS_SHARES=linux` works without a manual `smb.conf` edit. No
+admin is pre-seeded — visiting the dashboard on first boot runs its own setup
+screen, same as any other install. Flash `ferrous-nas.raw` to a disk with `dd`
+to run on real hardware.
+
+The shipped systemd unit runs every subsystem in its default **mocked** mode
+(same as running the binary directly) — add `Environment=FERROUS_TELEMETRY=linux`
+etc. to `/etc/systemd/system/ferrous-nasd.service` after boot to turn on the
+real backends you want; see the README's env var table. One caveat:
+`FERROUS_POWER=systemd` calls `systemctl reboot`/`poweroff` as the
+unprivileged `ferrous` account, which most systems will refuse via polkit
+until a rule grants it that permission — not something this repo sets up.
 
 ## Option B — the CasaOS-style installer
 
