@@ -1,39 +1,25 @@
 #!/bin/sh
 # Runs inside the image after packages are installed (mkosi calls this).
-# Wires up the FerrousNAS service, a dedicated system user, and first-boot.
+# Wires up the FerrousNAS service and first-boot configuration.
 set -eu
 
 echo "==> Configuring FerrousNAS appliance"
 
-# Dedicated unprivileged service account. Idempotent (skip if it already
-# exists) rather than relying on `|| true` to swallow every possible
-# useradd failure — that hid a real error before, leaving `ferrous` absent
-# and every step after it failing confusingly. A stale /etc/*.lock file left
-# behind by an interrupted build is a common cause of useradd failing on a
-# reused rootfs; clear one out defensively before trying (harmless on a
-# fresh build, where none of these exist anyway).
-rm -f /etc/passwd.lock /etc/group.lock /etc/shadow.lock /etc/gshadow.lock /etc/.pwd.lock
-if ! id -u ferrous >/dev/null 2>&1; then
-    useradd --system --home /var/lib/ferrous-nas --shell /usr/sbin/nologin ferrous
-    echo "==> useradd exited 0"
-fi
-
-# Diagnostics: if the *next* step still fails, this proves conclusively
-# whether the account exists at this point in the script, and how.
-echo "==> ferrous line in /etc/passwd: $(grep '^ferrous:' /etc/passwd || echo 'MISSING')"
-echo "==> getent passwd ferrous:       $(getent passwd ferrous || echo 'FAILED')"
-
-# Resolve to a numeric UID/GID up front rather than passing the *name*
-# "ferrous" to `install -o`/`-g`, which has to do its own name->id lookup
-# internally. mkosi wraps this script's execution in its own sandbox (see
-# "sandbox command omitted" in the build log); if that sandbox's view of
-# /etc/passwd for a *name lookup* ever differs from what useradd itself just
-# wrote, using the numeric ids captured right here sidesteps the whole
-# lookup rather than depending on it a second time.
-FERROUS_UID=$(id -u ferrous)
-FERROUS_GID=$(id -g ferrous)
-echo "==> ferrous resolved to uid=$FERROUS_UID gid=$FERROUS_GID"
-install -d -o "$FERROUS_UID" -g "$FERROUS_GID" /var/lib/ferrous-nas
+# The `ferrous` service account is declared in
+# mkosi.extra/usr/lib/sysusers.d/ferrous-nas.conf, not created here with
+# useradd. Two failed builds established that useradd genuinely reports
+# success (exit 0) but its write to /etc/passwd does not persist inside
+# whatever sandbox mkosi wraps this script's execution in ("sandbox command
+# omitted, rerun with --debug" in the build log) — the account was verified
+# MISSING immediately afterward, in the same script. sysusers.d sidesteps
+# that entirely: systemd-sysusers processes it against the real rootfs at
+# first boot (systemd-sysusers.service, part of sysinit.target — guaranteed
+# to run before ferrous-nasd.service, which is in multi-user.target), no
+# build-time script sandbox involved at all.
+#
+# Likewise, /var/lib/ferrous-nas's ownership isn't set up here either —
+# ferrous-nasd.service already declares StateDirectory=ferrous-nas, so
+# systemd creates and chowns it correctly before every service start.
 
 # mkosi.extra/ already placed the daemon binary and web assets on the rootfs
 # at their final paths before this script runs — just make sure the binary

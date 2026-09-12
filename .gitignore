@@ -10,6 +10,13 @@ npm-debug.log*
 # OS image build artifacts
 /os-image/*.raw
 /os-image/*.qcow2
+/os-image/*.json
+/os-image/initrd
+/os-image/initrd.cpio*
+/os-image/mkosi.output/
+/os-image/mkosi.cache/
+/os-image/mkosi.builddir/
+/os-image/mkosi.workspace*/
 /os-image/mkosi.extra/usr/local/bin/ferrous-nasd
 /os-image/mkosi.extra/usr/local/share/
 
