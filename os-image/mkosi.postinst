@@ -5,8 +5,17 @@ set -eu
 
 echo "==> Configuring FerrousNAS appliance"
 
-# Dedicated unprivileged service account.
-useradd --system --home /var/lib/ferrous-nas --shell /usr/sbin/nologin ferrous || true
+# Dedicated unprivileged service account. Idempotent (skip if it already
+# exists) rather than relying on `|| true` to swallow every possible
+# useradd failure — that hid a real error before, leaving `ferrous` absent
+# and every step after it failing confusingly. A stale /etc/*.lock file left
+# behind by an interrupted build (e.g. a previous aborted run) is a common
+# cause of useradd failing on a reused rootfs; clear one out defensively
+# before trying.
+rm -f /etc/passwd.lock /etc/group.lock /etc/shadow.lock /etc/gshadow.lock /etc/.pwd.lock
+if ! id -u ferrous >/dev/null 2>&1; then
+    useradd --system --home /var/lib/ferrous-nas --shell /usr/sbin/nologin ferrous
+fi
 install -d -o ferrous -g ferrous /var/lib/ferrous-nas
 
 # mkosi.extra/ already placed the daemon binary and web assets on the rootfs
