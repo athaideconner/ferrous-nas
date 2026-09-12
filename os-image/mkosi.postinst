@@ -22,28 +22,33 @@ echo "==> Configuring FerrousNAS appliance"
 # systemd creates and chowns it correctly before every service start.
 
 # mkosi.extra/ already placed the daemon binary and web assets on the rootfs
-# at their final paths before this script runs. Not re-chmod'ing the binary
-# here on purpose: `chmod 755 /usr/local/bin/ferrous-nasd` failed with "No
-# such file or directory" even though the file demonstrably exists in
-# mkosi.extra/ on the host with mode 755 already (from `install -Dm755` when
-# it was staged) — the same class of postinst-sandbox visibility mismatch as
-# the useradd issue above, this time for a path under /usr rather than /etc.
-# The chmod was always redundant anyway (the staged file's mode is already
-# correct), so the fix is the same as before: stop touching it here rather
-# than chase why the sandbox can't see it. `install -d` below is left in
-# place since, unlike chmod, it can't fail on an already-existing directory
-# either way.
-install -d /usr/local/share/ferrous-nas/web
+# at their final paths before this script runs — nothing left to do for
+# either here. Two things were tried and removed:
+#
+# `chmod 755 /usr/local/bin/ferrous-nasd` failed with "No such file or
+# directory" even though the file demonstrably exists in mkosi.extra/ on the
+# host with mode 755 already (from `install -Dm755` when it was staged).
+#
+# `install -d /usr/local/share/ferrous-nas/web` failed outright with "Read-
+# only file system" — which resolves the mystery above too: this script's
+# sandbox ("sandbox command omitted, rerun with --debug" in the build log)
+# mounts /usr read-only, so it can neither write there nor reliably see
+# writes/content that landed there via a different mechanism (extra-trees,
+# in this case) moments earlier in the same build. Both lines were always
+# redundant anyway — the binary's mode and the web directory's existence are
+# already correct from how mkosi.extra/ was staged — so the fix is simply to
+# stop touching /usr from postinst at all, rather than work around a
+# deliberately read-only mount.
 
 # Wire up the managed Samba fragment sharemgr::linux writes to at runtime
 # (FERROUS_SHARES=linux) so shares work without a manual smb.conf edit.
-# Idempotent: safe to re-run this script. Unlike the two issues above, this
-# touches a file the samba *package* installed during normal package
-# installation, not something from mkosi.extra/ or created within this
-# script — the same phase that successfully created system users like
-# `statd` earlier in the same build — so it isn't expected to hit the same
-# visibility problem. If it turns out to, that would mean the issue is
-# broader than extra-trees/postinst-created-accounts specifically.
+# Idempotent: safe to re-run this script. Unlike the /usr issues above, this
+# touches a file the samba *package* installed under /etc during normal
+# package installation, not something from mkosi.extra/ or created within
+# this script — so it isn't expected to hit the same read-only-mount problem.
+# Untested territory, though: every prior failure happened upstream of this
+# line, so it has never actually been reached before. If it turns out /etc is
+# also read-only here, that would mean the sandbox is broader than just /usr.
 if ! grep -q ferrousnas-shares.conf /etc/samba/smb.conf 2>/dev/null; then
     sed -i '/^\[global\]/a\   include = /etc/samba/ferrousnas-shares.conf' /etc/samba/smb.conf
 fi
