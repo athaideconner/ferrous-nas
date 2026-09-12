@@ -28,7 +28,7 @@ one that needs root.
 rootfs, so that needs to be present on the host too):
 
 ```bash
-sudo pacman -S --needed mkosi apt debian-archive-keyring qemu-system-x86
+sudo pacman -S --needed mkosi apt debian-archive-keyring qemu-system-x86 python-pefile
 cd os-image
 sudo mkosi build      # -> ferrous-nas.raw (bootable)
 sudo mkosi qemu       # boot it in a VM; browse https://<vm-ip>:4200
