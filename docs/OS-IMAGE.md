@@ -28,16 +28,16 @@ one that needs root.
 rootfs, so that needs to be present on the host too):
 
 ```bash
-sudo pacman -S --needed mkosi apt debian-archive-keyring qemu-system-x86 python-pefile
+sudo pacman -S --needed mkosi apt debian-archive-keyring qemu-system-x86 python-pefile cpio
 cd os-image
-sudo mkosi build      # -> ferrous-nas.raw (bootable)
+sudo mkosi build      # -> ferrous-nas_0.1.0.raw (bootable)
 sudo mkosi qemu       # boot it in a VM; browse https://<vm-ip>:4200
 ```
 
 **From a Debian/Ubuntu host:**
 
 ```bash
-sudo apt install mkosi systemd-container qemu-system-x86 dosfstools zstd
+sudo apt install mkosi systemd-container systemd-boot qemu-system-x86 dosfstools zstd cpio
 cd os-image
 sudo mkosi build
 sudo mkosi qemu
@@ -48,11 +48,23 @@ already staged, build and stage it first:
 
 ```bash
 ./scripts/build.sh
-install -Dm755 backend/target/release/ferrous-nasd \
+rustup target add x86_64-unknown-linux-musl   # once; also needs musl-tools / musl
+( cd backend && cargo build --release --target x86_64-unknown-linux-musl )
+install -Dm755 backend/target/x86_64-unknown-linux-musl/release/ferrous-nasd \
   os-image/mkosi.extra/usr/local/bin/ferrous-nasd
 mkdir -p os-image/mkosi.extra/usr/local/share/ferrous-nas/web
 cp -r frontend/dist/* os-image/mkosi.extra/usr/local/share/ferrous-nas/web/
 ```
+
+The image's daemon has to be the static musl build, not the plain
+`target/release` one: a binary built on your host links against the host's
+glibc, and Debian 12 ships glibc 2.36. A binary from a newer host (Arch, or
+Ubuntu 24.04) fails to start in the image with a `GLIBC_2.38 not found`
+error. The static binary doesn't depend on the image's libc at all.
+
+mkosi needs `bootctl` (from `systemd-boot` on Debian/Ubuntu) and `cpio` on
+the host to finish the build. `mkosi.conf` puts the kernel console on both
+the screen and `ttyS0`, so you can watch a headless boot.
 
 `mkosi.conf` selects Debian bookworm (with `contrib` enabled — `zfsutils-linux`
 lives there, not in `main`, since ZFS's CDDL license doesn't qualify), installs
@@ -60,11 +72,13 @@ the real NAS services (`zfsutils-linux`, `samba`, `nfs-kernel-server`,
 `docker.io`, `smartmontools`) plus `systemd-boot-efi` and
 `linux-headers-amd64` (needed for a bootable image and for the ZFS kernel
 module to actually build, respectively — both are easy to miss and only fail
-partway through a real build). `mkosi.postinst` enables the `ferrous-nasd`
+partway through a real build), plus `zfs-dkms` so the ZFS kernel module is
+actually built (it is only a Recommends of `zfsutils-linux`, and mkosi skips
+recommends). `mkosi.postinst.chroot` enables the `ferrous-nasd`
 systemd unit, creates the service user, and wires the managed Samba include
 line so `FERROUS_SHARES=linux` works without a manual `smb.conf` edit. No
 admin is pre-seeded — visiting the dashboard on first boot runs its own setup
-screen, same as any other install. Flash `ferrous-nas.raw` to a disk with `dd`
+screen, same as any other install. Flash `ferrous-nas_0.1.0.raw` to a disk with `dd`
 to run on real hardware.
 
 The shipped systemd unit runs every subsystem in its default **mocked** mode
