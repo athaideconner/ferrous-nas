@@ -54,7 +54,7 @@ mkdir -p os-image/mkosi.extra/usr/local/share/ferrous-nas/web
 cp -r frontend/dist/* os-image/mkosi.extra/usr/local/share/ferrous-nas/web/
 ```
 
-`mkosi.conf` selects Debian bookworm (with `contrib` enabled — `zfsutils-linux`
+`mkosi.conf` selects Debian trixie (with `contrib` enabled — `zfsutils-linux`
 lives there, not in `main`, since ZFS's CDDL license doesn't qualify), installs
 the real NAS services (`zfsutils-linux`, `samba`, `nfs-kernel-server`,
 `docker.io`, `smartmontools`) plus `systemd-boot-efi` and
@@ -62,8 +62,21 @@ the real NAS services (`zfsutils-linux`, `samba`, `nfs-kernel-server`,
 module to actually build, respectively — both are easy to miss and only fail
 partway through a real build). `mkosi.postinst` enables the `ferrous-nasd`
 systemd unit, creates the service user, and wires the managed Samba include
-line so `FERROUS_SHARES=linux` works without a manual `smb.conf` edit. No
-admin is pre-seeded — visiting the dashboard on first boot runs its own setup
+line so `FERROUS_SHARES=linux` works without a manual `smb.conf` edit.
+
+**Why trixie, not bookworm:** the staged `ferrous-nasd` is built on your host
+and links dynamically against the host's glibc. A current build host (Ubuntu
+24.04 or newer, Arch, etc.) produces a binary needing glibc 2.39, and
+bookworm only ships 2.36 — the image would boot but the daemon would fail with
+`GLIBC_2.39 not found`. trixie ships 2.41. Check what your build needs with:
+
+```bash
+objdump -T backend/target/release/ferrous-nasd | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+```
+
+It must be 2.41 or lower.
+
+No admin is pre-seeded — visiting the dashboard on first boot runs its own setup
 screen, same as any other install. Flash `ferrous-nas.raw` to a disk with `dd`
 to run on real hardware.
 
