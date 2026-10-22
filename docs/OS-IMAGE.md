@@ -57,10 +57,12 @@ cp -r frontend/dist/* os-image/mkosi.extra/usr/local/share/ferrous-nas/web/
 `mkosi.conf` selects Debian trixie (with `contrib` enabled — `zfsutils-linux`
 lives there, not in `main`, since ZFS's CDDL license doesn't qualify), installs
 the real NAS services (`zfsutils-linux`, `samba`, `nfs-kernel-server`,
-`docker.io`, `smartmontools`) plus `systemd-boot-efi` and
-`linux-headers-amd64` (needed for a bootable image and for the ZFS kernel
-module to actually build, respectively — both are easy to miss and only fail
-partway through a real build). `mkosi.postinst` enables the `ferrous-nasd`
+`docker.io`, `smartmontools`) plus `systemd-boot-efi`, `zfs-dkms` and
+`linux-headers-amd64` (needed for a bootable image, for the ZFS kernel module
+itself, and for that module to build, respectively — all easy to miss).
+`zfs-dkms` in particular fails silently: `zfsutils-linux` only *recommends*
+it and mkosi skips recommends, so without it the image builds fine and ships
+`zpool`, but there is no `zfs.ko` and every ZFS command fails at runtime. `mkosi.postinst` enables the `ferrous-nasd`
 systemd unit, creates the service user, and wires the managed Samba include
 line so `FERROUS_SHARES=linux` works without a manual `smb.conf` edit.
 
