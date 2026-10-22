@@ -16,14 +16,14 @@ ExecStart=/usr/local/bin/ferrous-nasd
 Restart=on-failure
 RestartSec=2
 
-# Hardening. ProtectSystem=full (not strict) because the real, opt-in
-# backends need /etc writable: sharemgr::linux (FERROUS_SHARES=linux) writes
+# Hardening. ProtectSystem=yes (not full or strict — both of those also make
+# /etc read-only) because the real, opt-in backends need /etc writable: sharemgr::linux (FERROUS_SHARES=linux) writes
 # /etc/samba/ferrousnas-shares.conf and /etc/exports.d/, and usermgr::linux
 # (FERROUS_USERS=linux) needs useradd/groupadd/smbpasswd to update
 # /etc/passwd, /etc/group and /etc/samba/smbpasswd. /usr and /boot stay
 # read-only.
 NoNewPrivileges=yes
-ProtectSystem=full
+ProtectSystem=yes
 ProtectHome=yes
 PrivateTmp=yes
 StateDirectory=ferrous-nas
