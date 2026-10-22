@@ -1,0 +1,9 @@
+# DHCP on every wired interface. The image ships systemd-networkd (enabled
+# by its preset) but no ifupdown config, so without this the NAS boots with
+# no address and the dashboard is unreachable.
+[Match]
+Type=ether
+Name=!veth* docker*
+
+[Network]
+DHCP=yes

@@ -1,0 +1,43 @@
+#!/bin/sh
+# Runs inside the image after packages are installed (mkosi calls this).
+# Wires up the FerrousNAS service and first-boot configuration.
+#
+# The ".chroot" suffix matters. A plain mkosi.postinst runs on the build
+# *host*, inside mkosi's sandbox, with the image only reachable under
+# $BUILDROOT — so every path below would have hit the sandbox's own /etc and
+# /usr instead of the image's. That was the real cause of the earlier failed
+# builds: useradd "succeeding" without the account appearing, /usr being
+# read-only, and the staged binary seemingly not existing. With the suffix,
+# mkosi chroots into the image first and these paths mean what they say.
+set -eu
+
+echo "==> Configuring FerrousNAS appliance"
+
+# The `ferrous` service account is declared in
+# mkosi.extra/usr/lib/sysusers.d/ferrous-nas.conf, and systemd-sysusers
+# creates it at first boot (sysinit.target, before ferrous-nasd.service in
+# multi-user.target). /var/lib/ferrous-nas comes from the unit's
+# StateDirectory=ferrous-nas, so systemd creates and chowns it at start.
+#
+# mkosi.extra/ already placed the daemon binary and web assets on the rootfs
+# at their final paths, with the right modes, before this script runs.
+
+# Wire up the managed Samba fragment sharemgr::linux writes to at runtime
+# (FERROUS_SHARES=linux) so shares work without a manual smb.conf edit.
+# Idempotent: safe to re-run this script. samba-common normally generates
+# /etc/samba/smb.conf from the /usr/share/samba/smb.conf template via
+# debconf; copy the template ourselves if that didn't happen, then add our
+# include line.
+if [ ! -f /etc/samba/smb.conf ] && [ -f /usr/share/samba/smb.conf ]; then
+    cp /usr/share/samba/smb.conf /etc/samba/smb.conf
+fi
+if [ -f /etc/samba/smb.conf ] && ! grep -q ferrousnas-shares.conf /etc/samba/smb.conf; then
+    sed -i '/^\[global\]/a\   include = /etc/samba/ferrousnas-shares.conf' /etc/samba/smb.conf
+fi
+
+# ferrous-nasd.service is enabled by the symlink staged in
+# mkosi.extra/etc/systemd/system/multi-user.target.wants/ (matching its
+# [Install] WantedBy=multi-user.target). smbd/nmbd/nfs-server/docker were
+# enabled by their own packages' maintainer scripts.
+
+echo "==> Done. Boot the image and browse to https://<ip>:4200 (self-signed cert)"
