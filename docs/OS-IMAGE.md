@@ -65,6 +65,10 @@ it and mkosi skips recommends, so without it the image builds fine and ships
 `zpool`, but there is no `zfs.ko` and every ZFS command fails at runtime. `mkosi.postinst` enables the `ferrous-nasd`
 systemd unit, creates the service user, and wires the managed Samba include
 line so `FERROUS_SHARES=linux` works without a manual `smb.conf` edit.
+Networking is DHCP on every wired interface (systemd-networkd, via
+`mkosi.extra/etc/systemd/network/89-ethernet.network`), with
+`systemd-resolved` applying the DHCP-provided DNS servers; edit or add
+`.network` files there for a static address.
 
 **Why trixie, not bookworm:** the staged `ferrous-nasd` is built on your host
 and links dynamically against the host's glibc. A current build host (Ubuntu

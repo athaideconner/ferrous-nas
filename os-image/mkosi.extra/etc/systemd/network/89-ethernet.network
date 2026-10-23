@@ -1,0 +1,9 @@
+# DHCP on every wired interface. systemd-networkd is enabled in the image but
+# Debian ships only 89-ethernet.network.example, so without this file the NAS
+# boots with no IP address and the dashboard (port 4200) is unreachable.
+[Match]
+Kind=!*
+Type=ether
+
+[Network]
+DHCP=yes
