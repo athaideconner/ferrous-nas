@@ -60,6 +60,12 @@ mkdir -p "$WORK/iso/boot"
 mkfs.fat -C -F 32 -n FERROUS_EFI "$WORK/iso/boot/efiboot.img" $((efi_mib * 1024)) >/dev/null
 mmd -i "$WORK/iso/boot/efiboot.img" ::/EFI ::/EFI/BOOT
 mcopy -i "$WORK/iso/boot/efiboot.img" "$UKI" ::/EFI/BOOT/BOOTX64.EFI
+# Also in the ISO filesystem itself, as every distro ISO has it. Firmware
+# booting the El Torito image never looks here, but Ventoy and Rufus decide
+# whether an ISO "supports UEFI x64" by this path alone — without it they
+# refuse the ISO even though it boots fine when written raw.
+mkdir -p "$WORK/iso/EFI/BOOT"
+cp "$UKI" "$WORK/iso/EFI/BOOT/BOOTX64.EFI"
 
 echo "==> Writing $OUT"
 # UEFI-only hybrid ISO (the installed image is UEFI-only too — it boots via

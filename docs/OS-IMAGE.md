@@ -119,7 +119,11 @@ How it works:
 - [`os-image/installer/`](../os-image/installer/) is a second, tiny mkosi
   image built as a UKI — the kernel and the whole installer rootfs in one EFI
   file, running entirely from RAM. `build-iso.sh` places it at
-  `EFI/BOOT/BOOTX64.EFI` on an EFI partition inside the ISO.
+  `EFI/BOOT/BOOTX64.EFI` on an EFI partition inside the ISO, and again at
+  the same path in the ISO filesystem — Ventoy and Rufus only look there
+  when deciding whether an ISO supports UEFI x64.
+- Booted from Ventoy, the ISO is a file on the stick, not a device; the
+  installer then finds the `.iso` on the stick's partitions and loop-mounts it.
 - The ISO also carries `ferrous-nas.raw.zst`, the compressed disk image.
 - On boot, `ferrous-install` takes over tty1: it lists the disks (never the
   one the ISO itself is on), asks you to type the chosen disk's name to

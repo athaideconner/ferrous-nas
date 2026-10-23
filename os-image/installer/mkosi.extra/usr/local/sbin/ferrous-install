@@ -23,14 +23,37 @@ find_media() {
     if mountpoint -q "$MEDIA"; then return 0; fi
     mkdir -p "$MEDIA"
     say "Looking for the installation medium..."
-    for _ in $(seq 1 30); do
+    for i in $(seq 1 30); do
         udevadm settle 2>/dev/null
         if [ -e "/dev/disk/by-label/$ISO_LABEL" ]; then
             mount -o ro "/dev/disk/by-label/$ISO_LABEL" "$MEDIA" && return 0
         fi
+        # Not found as a device after a few seconds: maybe booted from Ventoy,
+        # where the ISO is a file on the stick rather than a block device.
+        [ "$i" -ge 5 ] && find_iso_file && return 0
         sleep 1
     done
     die "No medium labelled $ISO_LABEL found. Was this booted from the FerrousNAS ISO?"
+}
+
+# Ventoy (and similar) boot the ISO straight from a file on an exFAT/FAT/NTFS
+# partition. Look for a .iso labelled $ISO_LABEL on any partition and
+# loop-mount it.
+HOST=/run/ferrous-host
+find_iso_file() {
+    local part iso
+    mkdir -p "$HOST"
+    for part in $(lsblk -lnpo NAME,TYPE | awk '$2 == "part" { print $1 }'); do
+        mount -o ro "$part" "$HOST" 2>/dev/null || continue
+        while IFS= read -r iso; do
+            if [ "$(blkid -o value -s LABEL "$iso" 2>/dev/null)" = "$ISO_LABEL" ] \
+                && mount -o ro,loop "$iso" "$MEDIA"; then
+                return 0
+            fi
+        done < <(find "$HOST" -maxdepth 3 -iname '*.iso' -type f 2>/dev/null)
+        umount "$HOST"
+    done
+    return 1
 }
 
 # The whole-disk device the medium lives on (e.g. /dev/sr0 or /dev/sdb), so
@@ -38,6 +61,8 @@ find_media() {
 media_disk() {
     local src parent
     src=$(findmnt -no SOURCE "$MEDIA")
+    # Loop-mounted ISO file: the medium is the disk holding that file.
+    case "$src" in /dev/loop*) src=$(findmnt -no SOURCE "$HOST") ;; esac
     parent=$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1)
     if [ -n "$parent" ]; then echo "/dev/$parent"; else echo "$src"; fi
 }
