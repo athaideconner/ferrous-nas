@@ -2,7 +2,10 @@
 
 You picked "full OS image." Here's the honest picture and the real path to one.
 
-## Why the repo doesn't just spit out an ISO
+## Why the image is a host-level build
+
+(Once the image is built, `scripts/build-iso.sh` wraps it in an installer
+ISO — see [Installer ISO](#installer-iso).)
 
 A bootable OS image is a **host-level** artifact, not an application build:
 
@@ -93,6 +96,39 @@ real backends you want; see the README's env var table. One caveat:
 `FERROUS_POWER=systemd` calls `systemctl reboot`/`poweroff` as the
 unprivileged `ferrous` account, which most systems will refuse via polkit
 until a rule grants it that permission — not something this repo sets up.
+
+### Installer ISO
+
+To install onto a machine the way you would TrueNAS (boot a USB stick or CD,
+pick a disk, install), wrap the disk image in an installer ISO:
+
+```bash
+sudo apt install xorriso mtools     # plus the mkosi/dosfstools/zstd from above
+cd os-image && sudo mkosi -f build  # the disk image, if not already built
+cd .. && sudo ./scripts/build-iso.sh
+# -> os-image/ferrous-nas_<version>_installer.iso
+```
+
+Write the ISO to a USB stick with Rufus, balenaEtcher or `dd`, or attach it to
+a VM as a CD/DVD alongside an empty disk. It is **UEFI-only** (so is the
+installed system, which boots with systemd-boot), and unsigned, so turn
+**Secure Boot off**.
+
+How it works:
+
+- [`os-image/installer/`](../os-image/installer/) is a second, tiny mkosi
+  image built as a UKI — the kernel and the whole installer rootfs in one EFI
+  file, running entirely from RAM. `build-iso.sh` places it at
+  `EFI/BOOT/BOOTX64.EFI` on an EFI partition inside the ISO.
+- The ISO also carries `ferrous-nas.raw.zst`, the compressed disk image.
+- On boot, `ferrous-install` takes over tty1: it lists the disks (never the
+  one the ISO itself is on), asks you to type the chosen disk's name to
+  confirm, writes the image, moves the backup GPT header to the end of the
+  disk and grows the root partition and its ext4 filesystem to fill it, then
+  reboots into FerrousNAS.
+- The installed system is byte-for-byte the mkosi disk image, so everything
+  above (first-boot admin setup, mocked-by-default backends) applies
+  unchanged. The menu also has a rescue shell.
 
 ## Option B — the CasaOS-style installer
 

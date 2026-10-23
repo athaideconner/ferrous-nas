@@ -9,6 +9,15 @@ npm-debug.log*
 
 # OS image build artifacts
 /os-image/*.raw
+/os-image/*.iso
+/os-image/*.efi
+/os-image/*.initrd
+/os-image/*.vmlinuz
+/os-image/ferrous-nas_*
+/os-image/.iso-work.*/
+/os-image/installer/ferrous-nas-installer*
+/os-image/installer/mkosi.cache/
+/os-image/installer/mkosi.output/
 /os-image/*.qcow2
 /os-image/*.json
 /os-image/initrd

@@ -1,0 +1,159 @@
+#!/bin/bash
+# FerrousNAS installer. Runs on tty1 of the installer ISO (see
+# ferrous-installer.service): finds the disk image on the boot medium, asks
+# which disk to install to, writes the image, and grows the root partition to
+# fill the disk. The installed system is then exactly the image mkosi built —
+# first-boot setup (admin account etc.) happens in the dashboard as usual.
+set -uo pipefail
+
+ISO_LABEL=FERROUS_NAS
+MEDIA=/run/ferrous-media
+PAYLOAD=$MEDIA/ferrous-nas.raw.zst
+ROOT_PARTLABEL=root-x86-64
+
+say()  { printf '%s\n' "$*"; }
+die()  { say ""; say "ERROR: $*"; say ""; read -rp "Press Enter to return to the menu... " _; exit 1; }
+
+shell() {
+    say "Type 'exit' to return to the installer."
+    bash -l
+}
+
+find_media() {
+    if mountpoint -q "$MEDIA"; then return 0; fi
+    mkdir -p "$MEDIA"
+    say "Looking for the installation medium..."
+    for _ in $(seq 1 30); do
+        udevadm settle 2>/dev/null
+        if [ -e "/dev/disk/by-label/$ISO_LABEL" ]; then
+            mount -o ro "/dev/disk/by-label/$ISO_LABEL" "$MEDIA" && return 0
+        fi
+        sleep 1
+    done
+    die "No medium labelled $ISO_LABEL found. Was this booted from the FerrousNAS ISO?"
+}
+
+# The whole-disk device the medium lives on (e.g. /dev/sr0 or /dev/sdb), so
+# it can never be offered as an install target.
+media_disk() {
+    local src parent
+    src=$(findmnt -no SOURCE "$MEDIA")
+    parent=$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1)
+    if [ -n "$parent" ]; then echo "/dev/$parent"; else echo "$src"; fi
+}
+
+list_disks() {
+    local skip=$1
+    lsblk -dpno NAME,TYPE,RO,SIZE,MODEL | while read -r name type ro size model; do
+        [ "$type" = disk ] || continue
+        [ "$ro" = 0 ] || continue
+        [ "$name" = "$skip" ] && continue
+        case "$name" in /dev/zram*|/dev/loop*) continue ;; esac
+        printf '%s\t%s\t%s\n' "$name" "$size" "${model:-}"
+    done
+}
+
+install_to() {
+    local disk=$1 need have part partnum rc
+    local -a ps
+
+    need=$(cat "$MEDIA/ferrous-nas.size")
+    have=$(blockdev --getsize64 "$disk")
+    if [ "$have" -lt "$need" ]; then
+        die "$disk is $((have / 1000000)) MB; the image needs at least $((need / 1000000)) MB."
+    fi
+
+    say ""
+    say "!!! EVERYTHING on $disk will be erased:"
+    lsblk -po NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS "$disk"
+    say ""
+    read -rp "Type the disk name ($disk) to confirm: " answer
+    [ "$answer" = "$disk" ] || { say "Not confirmed - nothing was changed."; sleep 2; return 1; }
+
+    say ""
+    say "==> Wiping old partition tables and signatures"
+    wipefs -af "$disk" >/dev/null || die "wipefs failed on $disk"
+
+    say "==> Writing FerrousNAS image to $disk"
+    zstd -dc "$PAYLOAD" | dd of="$disk" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress
+    ps=("${PIPESTATUS[@]}")
+    [ "${ps[0]}" = 0 ] || die "Reading the image failed (zstd exit ${ps[0]}) - the ISO may be damaged."
+    [ "${ps[1]}" = 0 ] || die "Writing to $disk failed (dd exit ${ps[1]})."
+
+    say "==> Growing the root partition to fill the disk"
+    # The image's backup GPT header sits where the image ended, not at the end
+    # of this (larger) disk. Move it, then extend the root partition.
+    sgdisk -e "$disk" >/dev/null || die "sgdisk -e failed"
+    partprobe_disk "$disk"
+    part=$(lsblk -lnpo NAME,PARTLABEL "$disk" | awk -v l="$ROOT_PARTLABEL" '$2 == l { print $1 }')
+    [ -n "$part" ] || die "Could not find the $ROOT_PARTLABEL partition on $disk"
+    partnum=$(cat "/sys/class/block/$(basename "$part")/partition")
+    echo ', +' | sfdisk --no-reread --no-tell-kernel -N "$partnum" "$disk" >/dev/null \
+        || die "Resizing partition $partnum on $disk failed"
+    partprobe_disk "$disk"
+    e2fsck -fy "$part" >/dev/null 2>&1; rc=$?
+    [ "$rc" -le 1 ] || die "e2fsck reported errors on $part (exit $rc)"
+    resize2fs "$part" >/dev/null 2>&1 || die "resize2fs failed on $part"
+    sync
+
+    say ""
+    say "FerrousNAS is installed on $disk."
+    say "Remove the installation medium, then press Enter to reboot."
+    say "After boot, open https://<this machine's IP>:4200 to create the admin account."
+    read -r _
+    umount "$MEDIA" 2>/dev/null
+    systemctl reboot
+    exit 0
+}
+
+partprobe_disk() {
+    blockdev --rereadpt "$1" 2>/dev/null || partx -u "$1" 2>/dev/null
+    udevadm settle 2>/dev/null
+    sleep 1
+}
+
+main() {
+    clear
+    find_media
+    clear
+    say "=============================================="
+    say "  FerrousNAS installer $(cat "$MEDIA/VERSION" 2>/dev/null)"
+    say "=============================================="
+    [ -r "$PAYLOAD" ] || die "Disk image $PAYLOAD missing from the medium."
+
+    local skip disks
+    skip=$(media_disk)
+    mapfile -t disks < <(list_disks "$skip")
+
+    say ""
+    if [ "${#disks[@]}" -eq 0 ]; then
+        say "No disks found to install to."
+    else
+        say "Disks available for installation:"
+        local i=1 d
+        for d in "${disks[@]}"; do
+            IFS=$'\t' read -r name size model <<<"$d"
+            printf '  %d) %-14s %8s  %s\n' "$i" "$name" "$size" "$model"
+            i=$((i + 1))
+        done
+    fi
+    say ""
+    say "  s) shell    r) reboot    p) power off"
+    say ""
+    read -rp "Choose a disk to install FerrousNAS on: " choice
+
+    case "$choice" in
+        s) shell ;;
+        r) systemctl reboot ;;
+        p) systemctl poweroff ;;
+        ''|*[!0-9]*) ;;
+        *)
+            if [ "$choice" -ge 1 ] && [ "$choice" -le "${#disks[@]}" ]; then
+                IFS=$'\t' read -r name _ <<<"${disks[$((choice - 1))]}"
+                install_to "$name"
+            fi
+            ;;
+    esac
+}
+
+main

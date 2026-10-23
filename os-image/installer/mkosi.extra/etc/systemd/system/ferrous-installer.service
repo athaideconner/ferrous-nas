@@ -1,0 +1,21 @@
+[Unit]
+Description=FerrousNAS installer
+# Take over tty1 instead of a login prompt.
+Conflicts=getty@tty1.service
+After=getty@tty1.service systemd-udevd.service systemd-udev-trigger.service
+
+[Service]
+Type=idle
+ExecStart=/usr/local/sbin/ferrous-install
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+# If the user leaves the installer (or it fails), offer it again.
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
