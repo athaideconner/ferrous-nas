@@ -1,0 +1,14 @@
+[Unit]
+Description=Create the FerrousNAS console/SSH login account
+# Only when the image was built with FERROUS_ADMIN_USER/FERROUS_ADMIN_PASSWORD
+# (see mkosi.postinst); the file is deleted once the account exists.
+ConditionPathExists=/etc/ferrous-nas/console-user
+After=systemd-sysusers.service
+Before=systemd-user-sessions.service ssh.service getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ferrous-console-user
+
+[Install]
+WantedBy=multi-user.target

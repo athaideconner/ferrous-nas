@@ -70,4 +70,19 @@ fi
 # build log — the same phase, again, that isn't affected) — nothing to do
 # for them here.
 
+# Optional console/SSH login account, requested at build time:
+#     sudo mkosi --environment=FERROUS_ADMIN_USER=<name> \
+#                --environment=FERROUS_ADMIN_PASSWORD=<password> -f build
+# Only a hash is stored in the image; ferrous-console-user.service creates
+# the account (in the sudo group) on first boot. Without these the image has
+# no login account at all, which is the default.
+if [ -n "${FERROUS_ADMIN_USER:-}" ] && [ -n "${FERROUS_ADMIN_PASSWORD:-}" ]; then
+    install -d -m 700 /etc/ferrous-nas
+    umask 077
+    printf '%s:%s\n' "$FERROUS_ADMIN_USER" \
+        "$(printf '%s' "$FERROUS_ADMIN_PASSWORD" | openssl passwd -6 -stdin)" \
+        > /etc/ferrous-nas/console-user
+    echo "==> Login account '$FERROUS_ADMIN_USER' will be created on first boot"
+fi
+
 echo "==> Done. Boot the image and browse to https://<ip>:4200 (self-signed cert)"

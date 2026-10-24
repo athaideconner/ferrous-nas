@@ -89,6 +89,17 @@ No admin is pre-seeded — visiting the dashboard on first boot runs its own set
 screen, same as any other install. Flash `ferrous-nas.raw` to a disk with `dd`
 to run on real hardware.
 
+By default the image has no Linux login account either (console or SSH). To
+get one, in the `sudo` group, pass it at build time — only a password hash
+goes into the image, and nothing goes into git:
+
+```bash
+sudo mkosi --environment=FERROUS_ADMIN_USER=<name> \
+           --environment=FERROUS_ADMIN_PASSWORD=<password> -f build
+```
+
+`ferrous-console-user.service` creates the account on first boot.
+
 The shipped systemd unit runs every subsystem in its default **mocked** mode
 (same as running the binary directly) — add `Environment=FERROUS_TELEMETRY=linux`
 etc. to `/etc/systemd/system/ferrous-nasd.service` after boot to turn on the
