@@ -17,6 +17,7 @@
 //! lifecycle is backend-specific.
 
 pub mod docker;
+pub mod recipes;
 
 use std::sync::Arc;
 
@@ -94,7 +95,8 @@ impl AppManager for MockAppManager {
             host_port,
             cpu_percent: rng.gen_range(0.5..8.0),
             mem_bytes: rng.gen_range(80u64..600) * 1_000_000,
-            web_ui: Some(format!("http://ferrous-nas.local:{host_port}")),
+            web_ui: Some(format!("http://{{host}}:{host_port}/")),
+            hint: None,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         store.apps.push(app.clone());

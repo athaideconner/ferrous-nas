@@ -7,6 +7,7 @@ export default function Apps() {
   const apps = useAsync(api.apps, 5000);
   const catalog = useAsync(api.catalog);
   const [cat, setCat] = useState("All");
+  const [installing, setInstalling] = useState<Set<string>>(new Set());
 
   const installedIds = useMemo(() => new Set(apps.data?.map((a) => a.catalog_id) ?? []), [apps.data]);
   const categories = useMemo(
@@ -50,15 +51,21 @@ export default function Apps() {
                       <button className="btn sm" onClick={() => act(() => api.startApp(a.id), `Started ${a.name}`)}>▶ Start</button>
                     )}
                     {a.web_ui && a.state === "running" && (
-                      <a className="btn sm" href={a.web_ui} target="_blank" rel="noreferrer">Open ↗</a>
+                      // The app is on the same machine as the dashboard, so
+                      // the address the browser used for this page reaches it.
+                      <a className="btn sm" href={a.web_ui.replace("{host}", window.location.hostname)} target="_blank" rel="noreferrer">Open ↗</a>
                     )}
                     <button
                       className="btn sm ghost danger"
-                      onClick={() => confirm(`Uninstall ${a.name}?`) && act(() => api.uninstallApp(a.id), `Uninstalled ${a.name}`)}
+                      onClick={() =>
+                        confirm(`Uninstall ${a.name}? Its data is kept, and comes back if you install it again.`) &&
+                        act(() => api.uninstallApp(a.id), `Uninstalled ${a.name}`)
+                      }
                     >
                       Uninstall
                     </button>
                   </div>
+                  {a.hint && <div className="faint" style={{ fontSize: 12 }}>🔑 {a.hint}</div>}
                 </div>
               ))}
             </div>
@@ -79,6 +86,7 @@ export default function Apps() {
           <div className="grid cols-3">
             {list.filter((c) => cat === "All" || c.category === cat).map((c) => {
               const installed = installedIds.has(c.id);
+              const busy = installing.has(c.id);
               return (
                 <div key={c.id} className="appcard">
                   <div className="row" style={{ justifyContent: "space-between" }}>
@@ -92,10 +100,15 @@ export default function Apps() {
                   <div className="desc">{c.description}</div>
                   <button
                     className={"btn sm" + (installed ? "" : " primary")}
-                    disabled={installed}
-                    onClick={() => act(() => api.installApp({ catalog_id: c.id }), `Installed ${c.name}`)}
+                    disabled={installed || busy}
+                    onClick={async () => {
+                      // Downloading an app can take minutes.
+                      setInstalling((s) => new Set(s).add(c.id));
+                      await act(() => api.installApp({ catalog_id: c.id }), `Installed ${c.name}`);
+                      setInstalling((s) => { const n = new Set(s); n.delete(c.id); return n; });
+                    }}
                   >
-                    {installed ? "✓ Installed" : "Install"}
+                    {installed ? "✓ Installed" : busy ? "Downloading and installing…" : "Install"}
                   </button>
                 </div>
               );

@@ -8,7 +8,7 @@ use axum::{
 };
 
 use crate::appmgr::AppManagerRef;
-use crate::auth::middleware::AdminUser;
+use crate::auth::middleware::{AdminUser, CurrentUser};
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 use crate::state::Db;
@@ -18,8 +18,16 @@ pub async fn list_catalog(State(db): State<Db>) -> Json<Vec<CatalogApp>> {
     Json(db.read().await.catalog.clone())
 }
 
-pub async fn list_apps(State(mgr): State<AppManagerRef>) -> ApiResult<Json<Vec<InstalledApp>>> {
-    Ok(Json(mgr.list().await?))
+pub async fn list_apps(
+    CurrentUser(user): CurrentUser,
+    State(mgr): State<AppManagerRef>,
+) -> ApiResult<Json<Vec<InstalledApp>>> {
+    let mut apps = mgr.list().await?;
+    if !user.is_admin {
+        // Hints can carry an app's generated admin password.
+        apps.iter_mut().for_each(|a| a.hint = None);
+    }
+    Ok(Json(apps))
 }
 
 pub async fn install_app(

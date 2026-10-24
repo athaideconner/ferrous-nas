@@ -112,6 +112,7 @@ export interface InstalledApp {
   cpu_percent: number;
   mem_bytes: number;
   web_ui: string | null;
+  hint?: string;
   created_at: string;
 }
 

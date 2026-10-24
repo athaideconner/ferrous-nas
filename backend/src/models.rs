@@ -194,7 +194,13 @@ pub struct InstalledApp {
     pub host_port: u16,
     pub cpu_percent: f32,
     pub mem_bytes: u64,
+    /// Where the app's web UI is; `{host}` stands for whatever address the
+    /// browser reached the dashboard on.
     pub web_ui: Option<String>,
+    /// How to log in the first time (may include a generated password, so
+    /// only sent to admins).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
     pub created_at: String,
 }
 

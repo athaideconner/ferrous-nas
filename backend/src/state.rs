@@ -281,11 +281,11 @@ fn seed_catalog() -> Vec<CatalogApp> {
         a("Immich", "Photo backup", "High-performance self-hosted photo and video backup, an alternative to Google Photos.", "📷", "Media", "ghcr.io/immich-app/immich-server:release", 2283),
         a("Pi-hole", "Network ad-blocker", "Network-wide ad blocking via a DNS sinkhole.", "🛡️", "Network", "pihole/pihole:latest", 8081),
         a("Vaultwarden", "Password manager", "Lightweight Bitwarden-compatible password vault server.", "🔐", "Security", "vaultwarden/server:latest", 8082),
-        a("Home Assistant", "Home automation", "Open-source home automation that puts local control and privacy first.", "🏠", "Automation", "ghcr.io/home-assistant/home-assistant:stable", 8123),
+        a("Home Assistant", "Home automation", "Open-source home automation that puts local control and privacy first.", "🏠", "Automation", "homeassistant/home-assistant:stable", 8123),
         a("qBittorrent", "Download client", "A free BitTorrent client with a clean web UI.", "🌐", "Downloads", "linuxserver/qbittorrent:latest", 8083),
         a("Grafana", "Dashboards", "Query, visualize and alert on your metrics.", "📊", "Monitoring", "grafana/grafana:latest", 3000),
         a("Portainer", "Container management", "A lightweight management UI for your container environment.", "🐳", "Management", "portainer/portainer-ce:latest", 9000),
-        a("Paperless-ngx", "Document archive", "Scan, index and archive all your physical documents.", "📄", "Productivity", "ghcr.io/paperless-ngx/paperless-ngx:latest", 8084),
+        a("Paperless-ngx", "Document archive", "Scan, index and archive all your physical documents.", "📄", "Productivity", "paperlessngx/paperless-ngx:latest", 8084),
         a("AdGuard Home", "DNS filtering", "Network-wide software for blocking ads and tracking.", "🚫", "Network", "adguard/adguardhome:latest", 8085),
     ]
 }
@@ -303,7 +303,8 @@ fn seed_apps(catalog: &[CatalogApp]) -> Vec<InstalledApp> {
         host_port,
         cpu_percent: if state == AppState::Running { rng.gen_range(0.5..12.0) } else { 0.0 },
         mem_bytes: if state == AppState::Running { rng.gen_range(80..900) * 1_000_000 } else { 0 },
-        web_ui: Some(format!("http://ferrous-nas.local:{host_port}")),
+        web_ui: Some(format!("http://{{host}}:{host_port}/")),
+        hint: None,
         created_at: now_iso(),
     };
     let get = |id: &str| catalog.iter().find(|c| c.id == id).unwrap();
