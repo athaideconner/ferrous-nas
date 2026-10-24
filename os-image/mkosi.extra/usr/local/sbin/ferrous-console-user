@@ -1,8 +1,8 @@
 #!/bin/sh
 # First boot: create the Linux login account requested at build time
 # (/etc/ferrous-nas/console-user holds "name:password-hash"), in the sudo
-# group, then delete the request. Done at boot rather than in mkosi.postinst
-# because account changes made there have not persisted (see mkosi.postinst).
+# group, then delete the request. Done here, by the running system, so the
+# account is made exactly as useradd on the real install would make it.
 set -eu
 req=/etc/ferrous-nas/console-user
 IFS= read -r line < "$req"
