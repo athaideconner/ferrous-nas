@@ -132,7 +132,6 @@ do_install() {
             | dd of="$disk" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress \
                 2> >(tr '\r' '\n' | sed -un 's/^\([0-9]\+\) bytes.*/BYTES \1/p')
         ps=("${PIPESTATUS[@]}")
-        wait $!
     fi
     [ "${ps[0]}" = 0 ] || die "Reading the image failed (zstd exit ${ps[0]}) - the medium may be damaged."
     [ "${ps[1]}" = 0 ] || die "Writing to $disk failed (dd exit ${ps[1]})."
