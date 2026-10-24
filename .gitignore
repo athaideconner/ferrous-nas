@@ -18,6 +18,8 @@ npm-debug.log*
 /os-image/installer/ferrous-nas-installer*
 /os-image/installer/mkosi.cache/
 /os-image/installer/mkosi.output/
+/os-image/installer-gui/ferrous-nas-installer-gui*
+/os-image/installer-gui/mkosi.cache/
 /os-image/*.qcow2
 /os-image/*.json
 /os-image/initrd

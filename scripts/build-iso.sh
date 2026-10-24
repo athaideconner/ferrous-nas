@@ -8,20 +8,22 @@
 #     sudo ./scripts/build-iso.sh
 #
 # Produces os-image/ferrous-nas_<version>_installer.iso: a UEFI-bootable
-# hybrid ISO (burn it, or write it to a USB stick with Rufus/Etcher/dd). It
-# boots a small RAM-only installer (os-image/installer/) that writes the disk
-# image to a disk you choose and grows it to fill that disk.
+# hybrid ISO (burn it, or write it to a USB stick with Rufus/Etcher/dd, or
+# copy it onto a Ventoy stick). It boots a small RAM-only installer
+# (os-image/installer/) that runs a graphical wizard (os-image/installer-gui/,
+# carried on the ISO as gui.sqfs) to write the disk image to a disk you
+# choose, grow it to fill that disk, and set up a login account.
 #
-# Host packages: mkosi xorriso mtools dosfstools zstd
+# Host packages: mkosi xorriso mtools dosfstools zstd squashfs-tools
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ISO_LABEL=FERROUS_NAS   # must match ISO_LABEL in installer/.../ferrous-install
 
 PATH=$PATH:/usr/sbin:/sbin   # mkfs.fat lives in sbin
-for tool in mkosi xorriso mcopy mmd mkfs.fat zstd; do
+for tool in mkosi xorriso mcopy mmd mkfs.fat zstd mksquashfs; do
     command -v "$tool" >/dev/null || {
-        echo "missing $tool — install: sudo apt install mkosi xorriso mtools dosfstools zstd" >&2
+        echo "missing $tool — install: sudo apt install mkosi xorriso mtools dosfstools zstd squashfs-tools" >&2
         exit 1
     }
 done
@@ -39,6 +41,10 @@ echo "==> Building the installer environment (os-image/installer/)"
 mkosi -C os-image/installer -f build
 UKI=$(ls -t os-image/installer/ferrous-nas-installer_*.efi | head -n1)
 
+echo "==> Building the graphical installer layer (os-image/installer-gui/)"
+mkosi -C os-image/installer-gui -f build
+GUI_TREE=$(ls -td os-image/installer-gui/ferrous-nas-installer-gui_*/ | head -n1)
+
 # On disk next to the outputs, not /tmp: the compressed image is ~1 GB and
 # /tmp is often RAM-backed.
 WORK=$(mktemp -d -p os-image .iso-work.XXXXXX)
@@ -49,6 +55,9 @@ echo "==> Compressing $IMAGE"
 zstd -T0 -6 -q -o "$WORK/iso/ferrous-nas.raw.zst" "$IMAGE"
 stat -c %s "$IMAGE" > "$WORK/iso/ferrous-nas.size"
 echo "$VERSION" > "$WORK/iso/VERSION"
+
+echo "==> Packing the graphical installer layer"
+mksquashfs "$GUI_TREE" "$WORK/iso/gui.sqfs" -comp zstd -noappend -quiet
 
 echo "==> Building the EFI boot partition"
 # FAT image holding the installer UKI at the removable-media fallback path,

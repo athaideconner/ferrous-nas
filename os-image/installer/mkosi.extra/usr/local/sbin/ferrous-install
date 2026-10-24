@@ -1,18 +1,39 @@
 #!/bin/bash
-# FerrousNAS installer. Runs on tty1 of the installer ISO (see
-# ferrous-installer.service): finds the disk image on the boot medium, asks
-# which disk to install to, writes the image, and grows the root partition to
-# fill the disk. The installed system is then exactly the image mkosi built —
-# first-boot setup (admin account etc.) happens in the dashboard as usual.
+# FerrousNAS installer. Finds the disk image on the boot medium, writes it to
+# a disk, grows the root partition to fill that disk, and requests the login
+# account the installed system creates on first boot. The installed system is
+# then exactly the image mkosi built — the dashboard's own admin account is
+# still created in the dashboard, as usual.
+#
+#   ferrous-install                 text installer on tty1 (the fallback for
+#                                   when the graphical one can't start)
+#   ferrous-install --mount-media   find and mount the medium, print the disk
+#                                   it lives on
+#   ferrous-install --list-disks    install targets, tab-separated
+#   ferrous-install --install DISK  install non-interactively; reads the
+#                                   username, password and hostname (one per
+#                                   line) from stdin, prints progress
+#
+# The non-interactive forms are what ferrous-gui's graphical wizard drives.
 set -uo pipefail
 
 ISO_LABEL=FERROUS_NAS
 MEDIA=/run/ferrous-media
 PAYLOAD=$MEDIA/ferrous-nas.raw.zst
 ROOT_PARTLABEL=root-x86-64
+TARGET=/run/ferrous-target
+INTERACTIVE=1
 
 say()  { printf '%s\n' "$*"; }
-die()  { say ""; say "ERROR: $*"; say ""; read -rp "Press Enter to return to the menu... " _; exit 1; }
+die() {
+    if [ "$INTERACTIVE" = 1 ]; then
+        say ""; say "ERROR: $*"; say ""
+        read -rp "Press Enter to return to the menu... " _
+    else
+        say "ERROR $*"
+    fi
+    exit 1
+}
 
 shell() {
     say "Type 'exit' to return to the installer."
@@ -22,7 +43,7 @@ shell() {
 find_media() {
     if mountpoint -q "$MEDIA"; then return 0; fi
     mkdir -p "$MEDIA"
-    say "Looking for the installation medium..."
+    [ "$INTERACTIVE" = 1 ] && say "Looking for the installation medium..."
     for i in $(seq 1 30); do
         udevadm settle 2>/dev/null
         if [ -e "/dev/disk/by-label/$ISO_LABEL" ]; then
@@ -78,9 +99,95 @@ list_disks() {
     done
 }
 
-install_to() {
-    local disk=$1 need have part partnum rc
+# Login names the installed system can take: what useradd accepts, minus the
+# accounts the image already has.
+valid_username() {
+    [[ $1 =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || return 1
+    case "$1" in root|ferrous|nobody|daemon|bin|sys) return 1 ;; esac
+}
+valid_hostname() { [[ $1 =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; }
+
+partprobe_disk() {
+    blockdev --rereadpt "$1" 2>/dev/null || partx -u "$1" 2>/dev/null
+    udevadm settle 2>/dev/null
+    sleep 1
+}
+
+# Write the image to $1, grow it, and request account $2 (password $3) and
+# hostname $4 (empty: keep the image's) on the installed system.
+do_install() {
+    local disk=$1 user=$2 pass=$3 host=$4 part partnum rc
     local -a ps
+
+    say "STEP Wiping old partition tables and signatures"
+    wipefs -af "$disk" >/dev/null || die "wipefs failed on $disk"
+
+    say "STEP Writing FerrousNAS to $disk"
+    if [ "$INTERACTIVE" = 1 ]; then
+        zstd -dc "$PAYLOAD" | dd of="$disk" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress
+        ps=("${PIPESTATUS[@]}")
+    else
+        # dd's progress ("<n> bytes ... copied\r"), as BYTES lines for the GUI.
+        zstd -dc "$PAYLOAD" \
+            | dd of="$disk" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress \
+                2> >(tr '\r' '\n' | sed -un 's/^\([0-9]\+\) bytes.*/BYTES \1/p')
+        ps=("${PIPESTATUS[@]}")
+        wait $!
+    fi
+    [ "${ps[0]}" = 0 ] || die "Reading the image failed (zstd exit ${ps[0]}) - the medium may be damaged."
+    [ "${ps[1]}" = 0 ] || die "Writing to $disk failed (dd exit ${ps[1]})."
+
+    say "STEP Growing the system partition to fill the disk"
+    # The image's backup GPT header sits where the image ended, not at the end
+    # of this (larger) disk. Move it, then extend the root partition.
+    sgdisk -e "$disk" >/dev/null || die "sgdisk -e failed"
+    partprobe_disk "$disk"
+    part=$(lsblk -lnpo NAME,PARTLABEL "$disk" | awk -v l="$ROOT_PARTLABEL" '$2 == l { print $1 }')
+    [ -n "$part" ] || die "Could not find the $ROOT_PARTLABEL partition on $disk"
+    partnum=$(cat "/sys/class/block/$(basename "$part")/partition")
+    echo ', +' | sfdisk --no-reread --no-tell-kernel -N "$partnum" "$disk" >/dev/null \
+        || die "Resizing partition $partnum on $disk failed"
+    partprobe_disk "$disk"
+    e2fsck -fy "$part" >/dev/null 2>&1; rc=$?
+    [ "$rc" -le 1 ] || die "e2fsck reported errors on $part (exit $rc)"
+    resize2fs "$part" >/dev/null 2>&1 || die "resize2fs failed on $part"
+
+    say "STEP Setting up the login account"
+    # Picked up by ferrous-console-user.service on the installed system's
+    # first boot, which creates the account; only the hash is stored.
+    mkdir -p "$TARGET"
+    mount "$part" "$TARGET" || die "Could not mount $part"
+    install -d -m 700 "$TARGET/etc/ferrous-nas"
+    (umask 077; printf '%s:%s\n' "$user" "$(printf '%s' "$pass" | openssl passwd -6 -stdin)" \
+        > "$TARGET/etc/ferrous-nas/console-user") || { umount "$TARGET"; die "Could not write the account"; }
+    [ -n "$host" ] && echo "$host" > "$TARGET/etc/hostname"
+    umount "$TARGET"
+    sync
+    say "DONE"
+}
+
+ask_account() {
+    local p2
+    while :; do
+        read -rp "Username for logging in (console and SSH): " user
+        valid_username "$user" && break
+        say "Use lowercase letters, digits, - or _, starting with a letter (not root/ferrous)."
+    done
+    while :; do
+        read -rsp "Password for $user: " pass; say ""
+        read -rsp "Repeat the password: " p2; say ""
+        [ -n "$pass" ] && [ "$pass" = "$p2" ] && break
+        say "The passwords were empty or did not match - try again."
+    done
+    while :; do
+        read -rp "Hostname [ferrous-nas]: " host
+        [ -z "$host" ] || valid_hostname "$host" && break
+        say "Use letters, digits and -, up to 63 characters."
+    done
+}
+
+install_to() {
+    local disk=$1 need have user pass host
 
     need=$(cat "$MEDIA/ferrous-nas.size")
     have=$(blockdev --getsize64 "$disk")
@@ -96,45 +203,19 @@ install_to() {
     [ "$answer" = "$disk" ] || { say "Not confirmed - nothing was changed."; sleep 2; return 1; }
 
     say ""
-    say "==> Wiping old partition tables and signatures"
-    wipefs -af "$disk" >/dev/null || die "wipefs failed on $disk"
-
-    say "==> Writing FerrousNAS image to $disk"
-    zstd -dc "$PAYLOAD" | dd of="$disk" bs=4M iflag=fullblock oflag=direct conv=fsync status=progress
-    ps=("${PIPESTATUS[@]}")
-    [ "${ps[0]}" = 0 ] || die "Reading the image failed (zstd exit ${ps[0]}) - the ISO may be damaged."
-    [ "${ps[1]}" = 0 ] || die "Writing to $disk failed (dd exit ${ps[1]})."
-
-    say "==> Growing the root partition to fill the disk"
-    # The image's backup GPT header sits where the image ended, not at the end
-    # of this (larger) disk. Move it, then extend the root partition.
-    sgdisk -e "$disk" >/dev/null || die "sgdisk -e failed"
-    partprobe_disk "$disk"
-    part=$(lsblk -lnpo NAME,PARTLABEL "$disk" | awk -v l="$ROOT_PARTLABEL" '$2 == l { print $1 }')
-    [ -n "$part" ] || die "Could not find the $ROOT_PARTLABEL partition on $disk"
-    partnum=$(cat "/sys/class/block/$(basename "$part")/partition")
-    echo ', +' | sfdisk --no-reread --no-tell-kernel -N "$partnum" "$disk" >/dev/null \
-        || die "Resizing partition $partnum on $disk failed"
-    partprobe_disk "$disk"
-    e2fsck -fy "$part" >/dev/null 2>&1; rc=$?
-    [ "$rc" -le 1 ] || die "e2fsck reported errors on $part (exit $rc)"
-    resize2fs "$part" >/dev/null 2>&1 || die "resize2fs failed on $part"
-    sync
+    ask_account
+    say ""
+    do_install "$disk" "$user" "$pass" "$host" | sed -u 's/^STEP /==> /; /^DONE$/d'
+    [ "${PIPESTATUS[0]}" = 0 ] || exit 1
 
     say ""
-    say "FerrousNAS is installed on $disk."
+    say "FerrousNAS is installed on $disk. Log in as $user."
     say "Remove the installation medium, then press Enter to reboot."
-    say "After boot, open https://<this machine's IP>:4200 to create the admin account."
+    say "After boot, open https://<this machine's IP>:4200 to create the dashboard admin."
     read -r _
     umount "$MEDIA" 2>/dev/null
     systemctl reboot
     exit 0
-}
-
-partprobe_disk() {
-    blockdev --rereadpt "$1" 2>/dev/null || partx -u "$1" 2>/dev/null
-    udevadm settle 2>/dev/null
-    sleep 1
 }
 
 main() {
@@ -181,4 +262,21 @@ main() {
     esac
 }
 
-main
+case "${1:-}" in
+    --mount-media) INTERACTIVE=0; find_media; media_disk ;;
+    --list-disks)  INTERACTIVE=0; find_media; list_disks "$(media_disk)" ;;
+    --install)
+        INTERACTIVE=0
+        disk=${2:?usage: ferrous-install --install DISK}
+        IFS= read -r user; IFS= read -r pass; IFS= read -r host || true
+        valid_username "$user" || die "Invalid username"
+        [ -n "$pass" ] || die "Empty password"
+        [ -z "$host" ] || valid_hostname "$host" || die "Invalid hostname"
+        find_media
+        [ "$disk" != "$(media_disk)" ] || die "$disk holds the installation medium"
+        [ "$(blockdev --getsize64 "$disk")" -ge "$(cat "$MEDIA/ferrous-nas.size")" ] \
+            || die "$disk is too small for FerrousNAS"
+        do_install "$disk" "$user" "$pass" "$host"
+        ;;
+    *) main ;;
+esac

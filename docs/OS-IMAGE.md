@@ -114,14 +114,17 @@ To install onto a machine the way you would TrueNAS (boot a USB stick or CD,
 pick a disk, install), wrap the disk image in an installer ISO:
 
 ```bash
-sudo apt install xorriso mtools     # plus the mkosi/dosfstools/zstd from above
+sudo apt install xorriso mtools squashfs-tools  # plus the mkosi/dosfstools/zstd from above
 cd os-image && sudo mkosi -f build  # the disk image, if not already built
 cd .. && sudo ./scripts/build-iso.sh
 # -> os-image/ferrous-nas_<version>_installer.iso
 ```
 
-Write the ISO to a USB stick with Rufus, balenaEtcher or `dd`, or attach it to
-a VM as a CD/DVD alongside an empty disk. It is **UEFI-only** (so is the
+Use mkosi 25 or newer: older releases (Ubuntu 24.04 ships 20.2) fail on
+trixie partway through the build.
+
+Write the ISO to a USB stick with Rufus, balenaEtcher or `dd`, copy it onto a
+Ventoy stick, or attach it to a VM as a CD/DVD alongside an empty disk. It is **UEFI-only** (so is the
 installed system, which boots with systemd-boot), and unsigned, so turn
 **Secure Boot off**.
 
@@ -135,15 +138,26 @@ How it works:
   when deciding whether an ISO supports UEFI x64.
 - Booted from Ventoy, the ISO is a file on the stick, not a device; the
   installer then finds the `.iso` on the stick's partitions and loop-mounts it.
-- The ISO also carries `ferrous-nas.raw.zst`, the compressed disk image.
-- On boot, `ferrous-install` takes over tty1: it lists the disks (never the
-  one the ISO itself is on), asks you to type the chosen disk's name to
-  confirm, writes the image, moves the backup GPT header to the end of the
-  disk and grows the root partition and its ext4 filesystem to fill it, then
-  reboots into FerrousNAS.
+- The ISO also carries `ferrous-nas.raw.zst`, the compressed disk image, and
+  `gui.sqfs`, the graphical installer: a separate mkosi image,
+  [`os-image/installer-gui/`](../os-image/installer-gui/), with GTK 4,
+  libadwaita and the cage kiosk compositor. It's kept out of the UKI because
+  firmware loads the UKI whole into RAM.
+- On boot, `ferrous-gui` mounts `gui.sqfs` from the medium and runs the
+  wizard full-screen — Welcome, Disk, Account, Summary, Install, Finish, in
+  the style of Calamares. It lists the disks (never the one the medium is
+  on, nor ones too small), asks for a login username, password and hostname,
+  confirms before erasing anything, then writes the image, moves the backup
+  GPT header to the end of the disk and grows the root partition and its
+  ext4 filesystem to fill it. The installed system creates that login (in
+  the `sudo` group) on its first boot.
+- The wizard needs no GPU driver: it draws in software on the firmware
+  framebuffer. If it can't start anyway, or you pick "Use text installer",
+  the same install runs as a text menu on tty1 (`ferrous-install`, which
+  also does the actual work for the wizard).
 - The installed system is byte-for-byte the mkosi disk image, so everything
   above (first-boot admin setup, mocked-by-default backends) applies
-  unchanged. The menu also has a rescue shell.
+  unchanged. The text menu also has a rescue shell.
 
 ## Option B — the CasaOS-style installer
 

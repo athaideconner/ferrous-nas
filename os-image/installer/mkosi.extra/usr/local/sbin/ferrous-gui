@@ -1,0 +1,65 @@
+#!/bin/bash
+# Starts the graphical installer wizard (see ../../../../installer-gui/), or
+# the text installer, ferrous-install, if that can't run. Runs on tty1 from
+# ferrous-installer.service.
+#
+# The wizard lives in gui.sqfs on the installation medium rather than in this
+# UKI, so this mounts it (read-only, with a tmpfs overlay for writes) and
+# runs it chrooted into it, under the cage kiosk compositor. This system is
+# bind-mounted at /host inside, which is how the wizard runs ferrous-install.
+set -u
+
+GUI=/run/ferrous-gui
+RESULT=$GUI/root/tmp/ferrous-result
+FAILED=/run/ferrous-gui.failed
+
+text() { exec /usr/local/sbin/ferrous-install; }
+
+# Once the wizard has failed to start, or the user chose text mode, stay
+# in text mode for this boot (the service restarts this script).
+[ -e "$FAILED" ] && text
+fail() { echo "ferrous-gui: $*" >&2; touch "$FAILED"; sleep 2; text; }
+
+clear
+echo "Starting the FerrousNAS installer..."
+/usr/local/sbin/ferrous-install --mount-media >/dev/null || text
+[ -r /run/ferrous-media/gui.sqfs ] || fail "no gui.sqfs on the medium"
+
+if ! mountpoint -q "$GUI/root"; then
+    mkdir -p "$GUI/ro" "$GUI/rw" "$GUI/root"
+    mount -o ro,loop /run/ferrous-media/gui.sqfs "$GUI/ro" || fail "cannot mount gui.sqfs"
+    mount -t tmpfs tmpfs "$GUI/rw" && mkdir -p "$GUI/rw/upper" "$GUI/rw/work"
+    mount -t overlay overlay \
+        -o "lowerdir=$GUI/ro,upperdir=$GUI/rw/upper,workdir=$GUI/rw/work" "$GUI/root" \
+        || fail "cannot set up the overlay"
+    mount --rbind /dev "$GUI/root/dev"
+    mount -t proc proc "$GUI/root/proc"
+    mount --rbind /sys "$GUI/root/sys"
+    mkdir -p "$GUI/root/run/udev" "$GUI/root/host"
+    mount --bind /run/udev "$GUI/root/run/udev"
+    # Non-recursive / plus the API filesystems ferrous-install needs.
+    mount --bind / "$GUI/root/host"
+    for d in dev proc sys run; do mount --rbind "/$d" "$GUI/root/host/$d"; done
+fi
+
+rm -f "$RESULT"
+install -d -m 700 "$GUI/root/tmp/xdg"
+# No GPU acceleration: cage draws with pixman and GTK with cairo, on
+# whatever DRM device there is (simpledrm on the firmware framebuffer, at
+# minimum), so this works without any GPU driver or firmware.
+chroot "$GUI/root" /usr/bin/env -i \
+    PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8 \
+    XDG_RUNTIME_DIR=/tmp/xdg \
+    LIBSEAT_BACKEND=seatd WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 \
+    XCURSOR_THEME=Adwaita \
+    GSK_RENDERER=cairo GDK_DISABLE=gl,vulkan GTK_A11Y=none NO_AT_BRIDGE=1 \
+    GSETTINGS_BACKEND=memory \
+    seatd-launch -- cage -s -- python3 /usr/local/lib/ferrous-installer/installer.py \
+    > /run/ferrous-gui.log 2>&1
+
+case "$(cat "$RESULT" 2>/dev/null)" in
+    reboot)   umount -l /run/ferrous-media 2>/dev/null; systemctl reboot; sleep infinity ;;
+    poweroff) systemctl poweroff; sleep infinity ;;
+    text)     touch "$FAILED"; text ;;
+    *)        fail "the graphical installer exited unexpectedly (log: /run/ferrous-gui.log)" ;;
+esac
