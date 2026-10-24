@@ -66,7 +66,9 @@ same trait-swap pattern:
   which drives the Docker Engine via [bollard](https://crates.io/crates/bollard):
   pull → create (port published, `com.ferrousnas.*` labels) → start, plus
   stop/remove. It lists only containers it manages, so it never touches
-  unrelated containers.
+  unrelated containers. How each catalog app runs — ports, volumes,
+  settings, helper containers — comes from its recipe in
+  [appmgr/recipes.rs](../backend/src/appmgr/recipes.rs).
 - **Shares** — `FERROUS_SHARES=linux`. A `ShareManager` trait
   ([sharemgr/mod.rs](../backend/src/sharemgr/mod.rs)) with `MockShareManager`
   (default) and `LinuxShareManager` ([sharemgr/linux.rs](../backend/src/sharemgr/linux.rs)).

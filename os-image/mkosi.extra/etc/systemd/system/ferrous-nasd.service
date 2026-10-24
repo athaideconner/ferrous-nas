@@ -1,17 +1,24 @@
 [Unit]
 Description=FerrousNAS control-plane daemon
 Documentation=https://github.com/athaideconner/ferrous-nas
-After=network-online.target
-Wants=network-online.target
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=exec
 User=ferrous
 Group=ferrous
+# The Docker socket is how apps get installed and run (FERROUS_APPS=docker
+# below). Membership is root-equivalent on this host, as Docker access
+# always is — the daemon already needs that much to manage apps.
+SupplementaryGroups=docker
 # Serve the built dashboard from the install location.
 Environment=FERROUS_ADDR=0.0.0.0:4200
 Environment=FERROUS_WEB_DIR=/usr/local/share/ferrous-nas/web
 Environment=RUST_LOG=info
+# Apps from the store run for real, as Docker containers. Everything else
+# stays on its default mocked backend (see the README's env var table).
+Environment=FERROUS_APPS=docker
 ExecStart=/usr/local/bin/ferrous-nasd
 Restart=on-failure
 RestartSec=2

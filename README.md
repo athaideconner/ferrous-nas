@@ -162,8 +162,11 @@ is a host-level task rather than something this repo builds on its own.
 > through the Docker Engine socket. FerrousNAS only ever touches containers it
 > created (tagged `com.ferrousnas.*` and named `ferrousnas-<app>`), so it never
 > disturbs unrelated containers. Install pulls the image, creates the container
-> with the app's port published, and starts it. Requires access to
-> `/var/run/docker.sock`; falls back to mock if the daemon isn't reachable.
+> the way its recipe ([appmgr/recipes.rs](backend/src/appmgr/recipes.rs)) says:
+> the right ports, data volumes that survive reinstalls, helper containers
+> (databases, caches), and a generated first login shown on the app's card.
+> Requires access to `/var/run/docker.sock`; falls back to mock if the daemon
+> isn't reachable. The OS image turns this on.
 
 > **Real shares.** `FERROUS_SHARES=linux` renders every enabled share to real
 > Samba/NFS config and reloads the services. FerrousNAS **never edits

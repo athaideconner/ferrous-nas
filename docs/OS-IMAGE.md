@@ -100,10 +100,14 @@ sudo mkosi --environment=FERROUS_ADMIN_USER=<name> \
 
 `ferrous-console-user.service` creates the account on first boot.
 
-The shipped systemd unit runs every subsystem in its default **mocked** mode
-(same as running the binary directly) — add `Environment=FERROUS_TELEMETRY=linux`
-etc. to `/etc/systemd/system/ferrous-nasd.service` after boot to turn on the
-real backends you want; see the README's env var table. One caveat:
+The shipped systemd unit runs **apps for real** (`FERROUS_APPS=docker`, with
+the `ferrous` account in the `docker` group) and every other subsystem in its
+default **mocked** mode — add `Environment=FERROUS_TELEMETRY=linux` etc. to
+`/etc/systemd/system/ferrous-nasd.service` after boot to turn on the other
+real backends you want; see the README's env var table. Apps keep their files
+people use (media, downloads, scans) under `/srv/ferrous-nas`, and the image
+turns off systemd-resolved's stub listener on 127.0.0.53:53 so Pi-hole or
+AdGuard Home can serve DNS on port 53. One caveat:
 `FERROUS_POWER=systemd` calls `systemctl reboot`/`poweroff` as the
 unprivileged `ferrous` account, which most systems will refuse via polkit
 until a rule grants it that permission — not something this repo sets up.
@@ -156,7 +160,7 @@ How it works:
   the same install runs as a text menu on tty1 (`ferrous-install`, which
   also does the actual work for the wizard).
 - The installed system is byte-for-byte the mkosi disk image, so everything
-  above (first-boot admin setup, mocked-by-default backends) applies
+  above (first-boot admin setup, real apps, other backends mocked) applies
   unchanged. The text menu also has a rescue shell.
 
 ## Option B — the CasaOS-style installer

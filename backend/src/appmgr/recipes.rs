@@ -223,6 +223,11 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
                 ("PAPERLESS_REDIS", "redis://{c:broker}:6379"),
                 ("PAPERLESS_ADMIN_USER", "admin"),
                 ("PAPERLESS_ADMIN_PASSWORD", "{secret:admin}"),
+                // Required: it refuses to start with none or the default.
+                ("PAPERLESS_SECRET_KEY", "{secret:key}"),
+                // Its default "[::]" fails on hosts without IPv6; Docker
+                // publishes the port over IPv4 regardless.
+                ("PAPERLESS_BIND_ADDR", "0.0.0.0"),
             ],
             volumes: &[
                 ("data", "/usr/src/paperless/data"),

@@ -77,6 +77,7 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
   const title = TITLES[loc.pathname] ?? "FerrousNAS";
   const tel = useAsync(api.telemetrySource);
   const live = tel.data?.source === "linux";
+  const realApps = tel.data?.apps === "docker";
 
   return (
     <div className="app">
@@ -85,7 +86,7 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
           <div className="logo">🗄️</div>
           <div>
             <div className="name">FerrousNAS</div>
-            <div className="ver">control plane · mock</div>
+            <div className="ver">control plane{realApps ? "" : " · mock"}</div>
           </div>
         </div>
         <nav className="nav">
@@ -97,9 +98,19 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
           ))}
         </nav>
         <div className="foot">
-          All operations are simulated.
-          <br />
-          No real disks are touched.
+          {realApps ? (
+            <>
+              Apps run for real, in Docker.
+              <br />
+              Storage, shares, users and power are simulated.
+            </>
+          ) : (
+            <>
+              All operations are simulated.
+              <br />
+              No real disks are touched.
+            </>
+          )}
         </div>
       </aside>
 
