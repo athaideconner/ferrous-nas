@@ -199,6 +199,8 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
                 // folder and anyone using the share can manage them.
                 ("PUID", "1000"),
                 ("PGID", "100"),
+                // ...and keeps what it writes group-writable, like the folder.
+                ("UMASK", "002"),
             ],
             volumes: &[("config", "/config")],
             files: &[("media/downloads", "/downloads")],
