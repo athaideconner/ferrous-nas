@@ -111,7 +111,11 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
         <div className="foot">
           {realApps ? (
             simulated.length === 0 ? (
-              <>Everything here is real: changes affect this machine.</>
+              <>
+                Storage, shares, apps, users and power are real: changes affect this machine.
+                <br />
+                The Network page and notifications are still sample data.
+              </>
             ) : (
               <>
                 Apps run for real, in Docker.
