@@ -121,9 +121,14 @@ NFS can see them.
 - **Users**: a dashboard user maps onto the OS account of the same name.
   Deleting one never deletes a regular login account (uid 1000+, like the
   console login the installer creates); it only removes its Samba access.
-- **Apps** keep the files people use (media, downloads, scans) under
-  `/srv/ferrous-nas`, and the image turns off systemd-resolved's stub
-  listener on 127.0.0.53:53 so Pi-hole or AdGuard Home can serve DNS.
+- **Apps** keep the files people use — media, downloads, photos, scans, in
+  `media/`, `media/downloads/`, `photos/` and `scans/` — under
+  `/srv/ferrous-nas` on the system disk, or in a pool dataset chosen under
+  "Media & files" on the Apps page (installed apps move with it; existing
+  files don't). The folders are group `users`, mode 2775, like shares, so
+  sharing that dataset lets you add media from another computer. The image
+  also turns off systemd-resolved's stub listener on 127.0.0.53:53 so
+  Pi-hole or AdGuard Home can serve DNS.
 
 ### Installer ISO
 

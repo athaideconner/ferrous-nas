@@ -12,7 +12,10 @@
 //!
 //! Data lives in named volumes (`ferrousnas-<catalog_id>-<name>`) that an
 //! uninstall leaves in place, so reinstalling an app picks its data back up;
-//! the passwords generated for it are kept for the same reason.
+//! the passwords generated for it are kept for the same reason. Files people
+//! work with directly (media, downloads, photos, scans) are instead folders
+//! under the files root — the system disk by default, or a pool dataset the
+//! admin picks — saved in `app-settings.json` in the state dir.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -33,7 +36,9 @@ use futures_util::future::join_all;
 use futures_util::StreamExt;
 use rand::distributions::{Alphanumeric, DistString};
 
-use super::recipes::{self, Recipe, FILES_ROOT};
+use tokio::sync::RwLock;
+
+use super::recipes::{self, Recipe, DEFAULT_FILES_ROOT};
 use super::AppManager;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
@@ -51,6 +56,7 @@ const LBL_HELPER_OF: &str = "com.ferrousnas.helper_of";
 
 pub struct DockerAppManager {
     docker: Docker,
+    files_root: RwLock<String>,
 }
 
 impl DockerAppManager {
@@ -58,7 +64,7 @@ impl DockerAppManager {
     pub async fn connect() -> Result<Self, String> {
         let docker = Docker::connect_with_unix_defaults().map_err(|e| e.to_string())?;
         docker.ping().await.map_err(|e| e.to_string())?;
-        Ok(Self { docker })
+        Ok(Self { docker, files_root: RwLock::new(load_files_root()) })
     }
 
     fn map_summary(c: ContainerSummary) -> InstalledApp {
@@ -172,7 +178,8 @@ impl DockerAppManager {
             _ => host_port,
         };
         let secrets = load_secrets(&cat.id);
-        let subst = |s: &str| fill(s, &cat.id, host_port, &secrets);
+        let files_root = self.files_root.read().await.clone();
+        let subst = |s: &str| fill(s, &cat.id, host_port, &files_root, &secrets);
 
         // Helpers first, on the app's own network, so they're up (or at
         // least starting) by the time the app looks for them.
@@ -206,7 +213,12 @@ impl DockerAppManager {
         let mut env: Vec<String> = r.env.iter().map(|(k, v)| format!("{k}={}", subst(v))).collect();
         let mut binds = volume_binds(&cat.id, r.volumes);
         for (dir, path) in r.files {
-            binds.push(format!("{FILES_ROOT}/{dir}:{path}"));
+            let host = format!("{files_root}/{dir}");
+            // Made here, not left to Docker, which would create it owned by
+            // root and unwritable for apps running as a user.
+            super::prepare_files_dir(&files_root, dir)
+                .map_err(|e| ApiError::BadRequest(format!("preparing {host}: {e}")))?;
+            binds.push(format!("{host}:{path}"));
         }
         if r.docker_socket {
             binds.push("/var/run/docker.sock:/var/run/docker.sock".into());
@@ -396,6 +408,48 @@ impl AppManager for DockerAppManager {
         self.remove_all(&app.catalog_id).await;
         Ok(())
     }
+
+    async fn files_root(&self) -> String {
+        self.files_root.read().await.clone()
+    }
+
+    async fn set_files_root(&self, root: &str, catalog: &[CatalogApp]) -> ApiResult<()> {
+        let json = serde_json::json!({ "files_root": root }).to_string();
+        std::fs::write(state_dir().join("app-settings.json"), json)
+            .map_err(|e| ApiError::BadRequest(format!("saving the files location: {e}")))?;
+        *self.files_root.write().await = root.to_string();
+
+        // Recreate the installed apps that keep files there, so they use the
+        // new location. Their volumes (settings, databases) stay as they are;
+        // files already in the old location are not moved.
+        let mut failed = Vec::new();
+        for app in self.all().await? {
+            let (Some(r), Some(cat)) =
+                (recipes::recipe(&app.catalog_id), catalog.iter().find(|c| c.id == app.catalog_id))
+            else {
+                continue;
+            };
+            if r.files.is_empty() {
+                continue;
+            }
+            self.remove_all(&cat.id).await;
+            match self.do_install(cat, &r, app.host_port).await {
+                Ok(new) if app.state != AppState::Running => {
+                    let _ = self.docker.stop_container(&new.id, None::<StopContainerOptions>).await;
+                }
+                Ok(_) => {}
+                Err(e) => failed.push(format!("{} ({e})", app.name)),
+            }
+        }
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(ApiError::BadRequest(format!(
+                "Saved the new location, but couldn't move {}: reinstall them from the store.",
+                failed.join(", ")
+            )))
+        }
+    }
 }
 
 /// Docker's "Bind for 0.0.0.0:53 failed: port is already allocated", as
@@ -433,8 +487,8 @@ fn volume_binds(catalog_id: &str, volumes: &[(&str, &str)]) -> Vec<String> {
 }
 
 /// Fill a recipe string's placeholders (see the `recipes` module docs).
-fn fill(s: &str, catalog_id: &str, port: u16, secrets: &HashMap<String, String>) -> String {
-    let mut out = s.replace("{port}", &port.to_string());
+fn fill(s: &str, catalog_id: &str, port: u16, files_root: &str, secrets: &HashMap<String, String>) -> String {
+    let mut out = s.replace("{port}", &port.to_string()).replace("{files}", files_root);
     while let Some(start) = out.find("{c:") {
         let Some(len) = out[start..].find('}') else { break };
         let alias = out[start + 3..start + len].to_string();
@@ -447,6 +501,16 @@ fn fill(s: &str, catalog_id: &str, port: u16, secrets: &HashMap<String, String>)
         out.replace_range(start..=start + len, &value);
     }
     out
+}
+
+/// Where app files live: as last chosen (app-settings.json), else the
+/// system-disk default.
+fn load_files_root() -> String {
+    std::fs::read_to_string(state_dir().join("app-settings.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("files_root")?.as_str().map(str::to_string))
+        .unwrap_or_else(|| DEFAULT_FILES_ROOT.to_string())
 }
 
 fn state_dir() -> PathBuf {
@@ -530,8 +594,8 @@ mod tests {
         let mut secrets = HashMap::new();
         secrets.insert("db".to_string(), "s3cret".to_string());
         assert_eq!(
-            fill("postgres://{c:database}:{port}/x?pw={secret:db}&again={secret:db}", "immich", 2283, &secrets),
-            "postgres://ferrousnas-immich-database:2283/x?pw=s3cret&again=s3cret"
+            fill("postgres://{c:database}:{port}/x?pw={secret:db}&again={secret:db} {files}", "immich", 2283, "/tank/files", &secrets),
+            "postgres://ferrousnas-immich-database:2283/x?pw=s3cret&again=s3cret /tank/files"
         );
     }
 }

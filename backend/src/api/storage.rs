@@ -12,6 +12,7 @@ use axum::{
 use crate::auth::middleware::AdminUser;
 use crate::error::ApiResult;
 use crate::models::*;
+use crate::appmgr::AppManagerRef;
 use crate::error::ApiError;
 use crate::poolmgr::PoolManagerRef;
 use crate::sharemgr::ShareManagerRef;
@@ -51,13 +52,33 @@ async fn refuse_if_shared(shares: &ShareManagerRef, what: &str, covers: impl Fn(
     Err(ApiError::Conflict(format!("{what} is shared as {} — delete the share first", names.join(", "))))
 }
 
+/// Refuse to destroy the dataset(s) apps keep their files in (media,
+/// downloads, photos, scans): the apps would lose them.
+async fn refuse_if_app_files(
+    mgr: &PoolManagerRef,
+    apps: &AppManagerRef,
+    what: &str,
+    covers: impl Fn(&Dataset) -> bool,
+) -> ApiResult<()> {
+    let root = apps.files_root().await;
+    let holds_root = |d: &Dataset| root == d.path || root.starts_with(&format!("{}/", d.path));
+    if mgr.datasets().await?.iter().any(|d| covers(d) && holds_root(d)) {
+        return Err(ApiError::Conflict(format!(
+            "{what} holds the apps' media & files ({root}) — move them elsewhere on the Apps page first"
+        )));
+    }
+    Ok(())
+}
+
 pub async fn delete_pool(
     _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     State(shares): State<ShareManagerRef>,
+    State(apps): State<AppManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     refuse_if_shared(&shares, &format!("Pool {id}"), |ds| ds.split('/').next() == Some(id.as_str())).await?;
+    refuse_if_app_files(&mgr, &apps, &format!("Pool {id}"), |d| d.pool_id == id).await?;
     mgr.delete_pool(&id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -86,9 +107,11 @@ pub async fn delete_dataset(
     _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
     State(shares): State<ShareManagerRef>,
+    State(apps): State<AppManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     refuse_if_shared(&shares, &format!("Dataset {id}"), |ds| ds == id).await?;
+    refuse_if_app_files(&mgr, &apps, &format!("Dataset {id}"), |d| d.id == id).await?;
     mgr.delete_dataset(&id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

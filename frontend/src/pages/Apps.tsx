@@ -6,6 +6,8 @@ import { Async, Badge, toast } from "../components/ui";
 export default function Apps() {
   const apps = useAsync(api.apps, 5000);
   const catalog = useAsync(api.catalog);
+  const files = useAsync(api.filesLocation);
+  const [moving, setMoving] = useState(false);
   const [cat, setCat] = useState("All");
   const [installing, setInstalling] = useState<Set<string>>(new Set());
 
@@ -20,8 +22,46 @@ export default function Apps() {
     catch (e) { toast(String((e as Error).message), true); }
   };
 
+  const moveFiles = async (path: string) => {
+    const label = files.data?.options.find((o) => o.path === path)?.label ?? path;
+    if (!confirm(
+      `Keep app media & files on ${label}?\n\nInstalled apps that use them restart with the new location. ` +
+      `Files already in the old location are not moved.`
+    )) return;
+    setMoving(true);
+    await act(() => api.setFilesLocation(path), `Apps now keep their files on ${label}`);
+    files.reload();
+    setMoving(false);
+  };
+
   return (
     <>
+      <div className="card" style={{ marginBottom: 22 }}>
+        <div className="row" style={{ justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div className="vstack" style={{ gap: 4, maxWidth: 640 }}>
+            <b>Media &amp; files</b>
+            <span className="faint" style={{ fontSize: 13 }}>
+              Where Jellyfin and Plex find media, qBittorrent saves downloads, Immich keeps photos and
+              Paperless picks up scans — in <span className="mono">media</span>,{" "}
+              <span className="mono">media/downloads</span>, <span className="mono">photos</span> and{" "}
+              <span className="mono">scans</span>. Pick a pool dataset, and share it to add files from your computer.
+            </span>
+          </div>
+          <Async state={files}>
+            {(f) => (
+              <select value={f.files_root} disabled={moving} onChange={(e) => moveFiles(e.target.value)}>
+                {f.options.map((o) => (
+                  <option key={o.path} value={o.path}>
+                    {o.label} ({o.path})
+                  </option>
+                ))}
+              </select>
+            )}
+          </Async>
+        </div>
+        {moving && <div className="faint" style={{ marginTop: 8 }}>Moving apps to the new location…</div>}
+      </div>
+
       <div className="section-title" style={{ marginTop: 0 }}>Installed</div>
       <Async state={apps}>
         {(list) =>

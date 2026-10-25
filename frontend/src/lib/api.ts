@@ -188,6 +188,8 @@ const post = <T>(path: string, body?: unknown) =>
   req<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 const patch = <T>(path: string, body: unknown) =>
   req<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown) =>
+  req<T>(path, { method: "PUT", body: JSON.stringify(body) });
 const del = <T>(path: string) => req<T>(path, { method: "DELETE" });
 
 export interface AuthStatus {
@@ -245,6 +247,9 @@ export const api = {
   deleteShare: (id: string) => del<{ ok: boolean }>(`/shares/${id}`),
 
   catalog: () => req<CatalogApp[]>("/apps/catalog"),
+  filesLocation: () =>
+    req<{ files_root: string; options: { label: string; path: string }[] }>("/apps/files-location"),
+  setFilesLocation: (files_root: string) => put<{ ok: boolean }>("/apps/files-location", { files_root }),
   apps: () => req<InstalledApp[]>("/apps"),
   installApp: (body: { catalog_id: string; host_port?: number }) =>
     post<InstalledApp>("/apps", body),

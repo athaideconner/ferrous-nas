@@ -66,6 +66,7 @@ fn protected(auth: AuthRef) -> Router<AppState> {
         .route("/shares/:id", patch(shares::patch_share).delete(shares::delete_share))
         // apps
         .route("/apps/catalog", get(apps::list_catalog))
+        .route("/apps/files-location", get(apps::get_files_location).put(apps::set_files_location))
         .route("/apps", get(apps::list_apps).post(apps::install_app))
         .route("/apps/:id", delete(apps::uninstall_app))
         .route("/apps/:id/start", post(apps::start_app))

@@ -14,11 +14,14 @@
 //!   reused on reinstall (the app's data volumes outlive an uninstall, and
 //!   e.g. a database volume only accepts the password it was created with)
 //! - `{c:ALIAS}` — the container name of this app's helper container ALIAS
+//! - `{files}` — where app files live (see [`DEFAULT_FILES_ROOT`])
 
-/// Host directory for files people work with directly — media libraries,
-/// downloads, scans — bind-mounted into the apps that use them, so they can
-/// be shared over SMB/NFS like any other folder.
-pub const FILES_ROOT: &str = "/srv/ferrous-nas";
+/// Where files people work with directly — media libraries, downloads,
+/// photos, scans — live by default: on the system disk. The admin can move
+/// them to a pool dataset instead (the Apps page's "Media & files"); either
+/// way they're bind-mounted into the apps that use them, and can be shared
+/// over SMB/NFS like any other folder.
+pub const DEFAULT_FILES_ROOT: &str = "/srv/ferrous-nas";
 
 pub struct Recipe {
     /// Port the web UI listens on inside the container; `None` means it
@@ -36,7 +39,7 @@ pub struct Recipe {
     pub env: &'static [(&'static str, &'static str)],
     /// Named volumes: (name, path in the container).
     pub volumes: &'static [(&'static str, &'static str)],
-    /// Folders under [`FILES_ROOT`]: (subdirectory, path in the container).
+    /// Folders under the files root: (subdirectory, path in the container).
     pub files: &'static [(&'static str, &'static str)],
     pub docker_socket: bool,
     /// Serve HTTPS with the NAS's own certificate, mounted at
@@ -98,7 +101,7 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
             web_port: Some(8096),
             volumes: &[("config", "/config"), ("cache", "/cache")],
             files: &[("media", "/media")],
-            hint: Some("Create your account in the setup wizard. Media goes in /srv/ferrous-nas/media."),
+            hint: Some("Create your account in the setup wizard. Media goes in {files}/media."),
             ..BASE
         },
         "plex" => Recipe {
@@ -109,7 +112,7 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
             host_network: true,
             volumes: &[("config", "/config"), ("transcode", "/transcode")],
             files: &[("media", "/data")],
-            hint: Some("Sign in with your Plex account. Media goes in /srv/ferrous-nas/media."),
+            hint: Some("Sign in with your Plex account. Media goes in {files}/media."),
             ..BASE
         },
         "nextcloud" => Recipe {
@@ -129,7 +132,8 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
                 ("IMMICH_MACHINE_LEARNING_URL", "http://{c:ml}:3003"),
                 ("IMMICH_MEDIA_LOCATION", "/data"),
             ],
-            volumes: &[("upload", "/data")],
+            // The photo library, with the other app files (not a volume).
+            files: &[("photos", "/data")],
             helpers: &[
                 Helper {
                     alias: "database",
@@ -190,10 +194,11 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
             env: &[
                 ("WEBUI_PORT", "{port}"),
                 ("TORRENTING_PORT", "6881"),
-                // The first login account, so downloads aren't owned by an
-                // id nobody can use.
+                // The first login account, and the group shared folders
+                // belong to (see sharemgr), so it can write its downloads
+                // folder and anyone using the share can manage them.
                 ("PUID", "1000"),
-                ("PGID", "1000"),
+                ("PGID", "100"),
             ],
             volumes: &[("config", "/config")],
             files: &[("media/downloads", "/downloads")],
@@ -236,7 +241,7 @@ pub fn recipe(catalog_id: &str) -> Option<Recipe> {
             ],
             files: &[("scans", "/usr/src/paperless/consume")],
             helpers: &[Helper { alias: "broker", image: "docker.io/library/redis:7", env: &[], volumes: &[("redis", "/data")] }],
-            hint: Some("admin / {secret:admin} — drop scans in /srv/ferrous-nas/scans"),
+            hint: Some("admin / {secret:admin} — drop scans in {files}/scans"),
             ..BASE
         },
         "adguard-home" => Recipe {
