@@ -135,6 +135,7 @@ fn seed_disks() -> Vec<Disk> {
         smart,
         power_on_hours: hours,
         pool_id: pool.map(|s| s.to_string()),
+        in_use: None,
     };
     // pool ids are assigned in seed_pools_and_datasets; leave None here and
     // wire them up there.

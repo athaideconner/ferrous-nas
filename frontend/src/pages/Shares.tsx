@@ -3,6 +3,12 @@ import { api, type Dataset, type ShareKind } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { Async, Badge, Modal, Toggle, toast } from "../components/ui";
 
+/** The address a client mounts the share at, on whatever host this page came from. */
+function connectAt(kind: ShareKind, name: string, path: string) {
+  const host = window.location.hostname;
+  return kind === "smb" ? `\\\\${host}\\${name}` : `${host}:${path}`;
+}
+
 export default function Shares() {
   const shares = useAsync(api.shares);
   const datasets = useAsync(api.datasets);
@@ -12,7 +18,8 @@ export default function Shares() {
     <>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
         <p className="muted" style={{ margin: 0 }}>
-          Expose datasets over SMB or NFS. Toggling a share reconfigures the mock file server.
+          Expose datasets over SMB (Windows, macOS, Linux file managers) or NFS. Sign in to SMB shares with
+          your FerrousNAS username and password.
         </p>
         <button className="btn primary sm" onClick={() => setShowNew(true)}>+ New share</button>
       </div>
@@ -25,14 +32,14 @@ export default function Shares() {
             ) : (
               <table>
                 <thead>
-                  <tr><th>Name</th><th>Protocol</th><th>Path</th><th>Access</th><th>Enabled</th><th></th></tr>
+                  <tr><th>Name</th><th>Protocol</th><th>Connect at</th><th>Access</th><th>Enabled</th><th></th></tr>
                 </thead>
                 <tbody>
                   {list.map((s) => (
                     <tr key={s.id}>
                       <td><b>{s.name}</b></td>
                       <td><Badge tone={s.kind === "smb" ? "blue" : "accent"}>{s.kind.toUpperCase()}</Badge></td>
-                      <td className="mono faint">{s.path}</td>
+                      <td className="mono faint" title={s.path}>{connectAt(s.kind, s.name, s.path)}</td>
                       <td>
                         <div className="row" style={{ gap: 6 }}>
                           {s.read_only ? <Badge tone="gray">read-only</Badge> : <Badge tone="green">read/write</Badge>}

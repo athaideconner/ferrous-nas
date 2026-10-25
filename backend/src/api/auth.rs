@@ -17,6 +17,7 @@ use serde_json::json;
 use crate::auth::middleware::CurrentUser;
 use crate::auth::{clear_cookie, session_cookie, token_from_headers, AuthRef};
 use crate::error::{ApiError, ApiResult};
+use crate::usermgr::UserOpsRef;
 
 #[derive(Deserialize)]
 pub struct LoginReq {
@@ -43,6 +44,7 @@ pub async fn status(State(auth): State<AuthRef>) -> Json<serde_json::Value> {
 
 pub async fn setup(
     State(auth): State<AuthRef>,
+    State(ops): State<UserOpsRef>,
     Json(req): Json<SetupReq>,
 ) -> ApiResult<impl IntoResponse> {
     let full_name = if req.full_name.trim().is_empty() {
@@ -54,6 +56,12 @@ pub async fn setup(
         .setup_first_admin(&req.username, &full_name, &req.password)
         .await?;
     tracing::info!("auth: initial administrator '{}' created", user.username);
+    // Like any other user, the admin gets an OS/Samba account so shares
+    // accept them. Unlike create_user this doesn't roll back: a NAS without
+    // its first admin is worse than one whose admin can't use SMB yet.
+    if let Err(e) = ops.provision_user(&user.username, &[], Some(&req.password)).await {
+        tracing::warn!("auth: '{}' can sign in, but no OS/Samba account was set up: {e}", user.username);
+    }
     Ok((cookie_headers(&session_cookie(&token))?, Json(user)))
 }
 

@@ -1,45 +1,46 @@
 [Unit]
 Description=FerrousNAS control-plane daemon
 Documentation=https://github.com/athaideconner/ferrous-nas
-After=network-online.target docker.service
+# Pools mounted, and the services it configures up, before it starts.
+After=network-online.target docker.service zfs-mount.service smbd.service nfs-server.service
 Wants=network-online.target docker.service
 
 [Service]
 Type=exec
-User=ferrous
-Group=ferrous
-# The Docker socket is how apps get installed and run (FERROUS_APPS=docker
-# below). Membership is root-equivalent on this host, as Docker access
-# always is — the daemon already needs that much to manage apps.
-SupplementaryGroups=docker
-# Serve the built dashboard from the install location.
+# Root, because every real backend enabled below needs it: zpool/zfs,
+# Samba/NFS config under /etc and reloading those services, useradd and
+# smbpasswd, smartctl, power actions, and the Docker socket (which is
+# root-equivalent anyway). The dashboard's own login and admin checks are
+# what stands between the network and these.
 Environment=FERROUS_ADDR=0.0.0.0:4200
 Environment=FERROUS_WEB_DIR=/usr/local/share/ferrous-nas/web
 Environment=RUST_LOG=info
-# Apps from the store run for real, as Docker containers. Everything else
-# stays on its default mocked backend (see the README's env var table).
+# Everything real (see the README's env var table):
+#   telemetry — this machine's own stats and disks
+#   apps      — store apps run as Docker containers
+#   pools     — ZFS pools and datasets; destructive operations (creating or
+#               destroying a pool, destroying a dataset) are enabled, and
+#               only ever touch blank disks — never the system disk
+#   shares    — SMB/NFS shares of those datasets
+#   users     — dashboard users get matching OS and Samba accounts
+#   power     — reboot / shut down really happen
+Environment=FERROUS_TELEMETRY=linux
 Environment=FERROUS_APPS=docker
+Environment=FERROUS_POOLS=zfs
+Environment=FERROUS_POOLS_DESTRUCTIVE=i-understand
+Environment=FERROUS_SHARES=linux
+Environment=FERROUS_USERS=linux
+Environment=FERROUS_POWER=systemd
 ExecStart=/usr/local/bin/ferrous-nasd
 Restart=on-failure
 RestartSec=2
 
-# Hardening. ProtectSystem=yes (not full or strict — both of those also make
-# /etc read-only) because the real, opt-in backends need /etc writable: sharemgr::linux (FERROUS_SHARES=linux) writes
-# /etc/samba/ferrousnas-shares.conf and /etc/exports.d/, and usermgr::linux
-# (FERROUS_USERS=linux) needs useradd/groupadd/smbpasswd to update
-# /etc/passwd, /etc/group and /etc/samba/smbpasswd. /usr and /boot stay
-# read-only.
+# No ProtectSystem=/ProtectHome=/PrivateTmp=: each gives the service its own
+# mount namespace, and a ZFS pool or dataset created in there would be
+# mounted only inside it — Samba and NFS, outside, would serve the empty
+# folder underneath.
 NoNewPrivileges=yes
-ProtectSystem=yes
-ProtectHome=yes
-PrivateTmp=yes
 StateDirectory=ferrous-nas
-
-# Note: FERROUS_POWER=systemd calls `systemctl reboot`/`poweroff` as this
-# unprivileged service account. On most systems that requires a polkit rule
-# granting org.freedesktop.login1.reboot/power-off to the `ferrous` user —
-# it is not granted by anything in this repo. Without one, real power actions
-# will fail with a permissions error until such a rule is added.
 
 [Install]
 WantedBy=multi-user.target

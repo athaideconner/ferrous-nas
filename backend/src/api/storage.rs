@@ -12,7 +12,9 @@ use axum::{
 use crate::auth::middleware::AdminUser;
 use crate::error::ApiResult;
 use crate::models::*;
+use crate::error::ApiError;
 use crate::poolmgr::PoolManagerRef;
+use crate::sharemgr::ShareManagerRef;
 use crate::telemetry::TelemetryRef;
 
 /// Physical disks come from the telemetry source: the mock store by default,
@@ -33,11 +35,29 @@ pub async fn create_pool(
     Ok(Json(mgr.create_pool(req).await?))
 }
 
+/// Refuse to destroy storage a share still serves: the share would point at
+/// nothing, and whoever relies on it would lose it without warning.
+async fn refuse_if_shared(shares: &ShareManagerRef, what: &str, covers: impl Fn(&str) -> bool) -> ApiResult<()> {
+    let names: Vec<String> = shares
+        .list()
+        .await?
+        .into_iter()
+        .filter(|s| covers(&s.dataset_id))
+        .map(|s| s.name)
+        .collect();
+    if names.is_empty() {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!("{what} is shared as {} — delete the share first", names.join(", "))))
+}
+
 pub async fn delete_pool(
     _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
+    State(shares): State<ShareManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    refuse_if_shared(&shares, &format!("Pool {id}"), |ds| ds.split('/').next() == Some(id.as_str())).await?;
     mgr.delete_pool(&id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -65,8 +85,10 @@ pub async fn create_dataset(
 pub async fn delete_dataset(
     _admin: AdminUser,
     State(mgr): State<PoolManagerRef>,
+    State(shares): State<ShareManagerRef>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    refuse_if_shared(&shares, &format!("Dataset {id}"), |ds| ds == id).await?;
     mgr.delete_dataset(&id).await?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

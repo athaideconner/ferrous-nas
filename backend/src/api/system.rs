@@ -13,6 +13,9 @@ use serde_json::{json, Value};
 
 use crate::auth::middleware::AdminUser;
 use crate::appmgr::AppManagerRef;
+use crate::poolmgr::PoolManagerRef;
+use crate::sharemgr::ShareManagerRef;
+use crate::usermgr::UserOpsRef;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{Alert, StatPoint, SystemInfo};
 use crate::powermgr::PowerManagerRef;
@@ -24,12 +27,24 @@ pub async fn get_system(State(tel): State<TelemetryRef>) -> Json<SystemInfo> {
 }
 
 /// Reports which telemetry source is active ("mock" or "linux"), and which
-/// app backend ("mock" or "docker"), so the UI can say what is real.
+/// backend every other subsystem uses ("mock" or a real one), so the UI can
+/// say what is real.
 pub async fn get_telemetry_source(
     State(tel): State<TelemetryRef>,
     State(apps): State<AppManagerRef>,
+    State(pools): State<PoolManagerRef>,
+    State(shares): State<ShareManagerRef>,
+    State(users): State<UserOpsRef>,
+    State(power): State<PowerManagerRef>,
 ) -> Json<Value> {
-    Json(json!({ "source": tel.source(), "apps": apps.source() }))
+    Json(json!({
+        "source": tel.source(),
+        "apps": apps.source(),
+        "pools": pools.source(),
+        "shares": shares.source(),
+        "users": users.source(),
+        "power": power.source(),
+    }))
 }
 
 #[derive(Deserialize)]

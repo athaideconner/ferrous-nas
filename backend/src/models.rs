@@ -86,6 +86,11 @@ pub struct Disk {
     pub power_on_hours: u32,
     /// Pool id this disk is a member of, if any.
     pub pool_id: Option<String>,
+    /// Why this disk can't go into a new pool (it holds the system, or has
+    /// partitions or a filesystem on it), if it can't. Pool members are
+    /// marked by `pool_id` instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_use: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,7 +148,7 @@ pub enum ShareKind {
     Nfs,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Share {
     pub id: String,
     pub name: String,

@@ -137,8 +137,8 @@ async fn main() {
 
     let tel = telemetry::build(db.clone());
     let apps = appmgr::build(db.clone()).await;
-    let shares = sharemgr::build(db.clone());
     let pools = poolmgr::build(db.clone());
+    let shares = sharemgr::build(db.clone(), pools.clone()).await;
     let power = powermgr::build();
     let user_ops = usermgr::build();
     let app_state = AppState { db, tel, apps, shares, pools, power, auth: auth.clone(), user_ops };

@@ -358,8 +358,9 @@ fn read_disk_totals() -> (u64, u64) {
 // --------------------------------------------------------------------------
 
 fn read_disks() -> Vec<Disk> {
+    // Not -d: the partitions say whether a disk is in a pool or in use.
     let out = Command::new("lsblk")
-        .args(["-b", "-d", "-J", "-o", "NAME,MODEL,SERIAL,SIZE,ROTA,TRAN"])
+        .args(["-b", "-J", "-o", "NAME,TYPE,MODEL,SERIAL,SIZE,ROTA,TRAN,FSTYPE,PTTYPE,LABEL,MOUNTPOINT"])
         .output();
     let Ok(out) = out else { return vec![] };
     if !out.status.success() {
@@ -379,6 +380,10 @@ fn read_disks() -> Vec<Disk> {
         if name.is_empty() || name.starts_with("loop") || name.starts_with("ram") || name.starts_with("sr") {
             continue;
         }
+        if d.get("type").and_then(|v| v.as_str()) != Some("disk") {
+            continue;
+        }
+        let (pool_id, in_use) = disk_usage(d);
         let rota = json_bool(d.get("rota"));
         let tran = d.get("tran").and_then(|v| v.as_str()).unwrap_or("");
         let kind = if tran == "nvme" {
@@ -399,10 +404,48 @@ fn read_disks() -> Vec<Disk> {
             temp_c: smart.1,
             smart: smart.0,
             power_on_hours: smart.2,
-            pool_id: None, // pools are still mocked; real membership isn't tracked yet
+            pool_id,
+            in_use,
         });
     }
     disks
+}
+
+/// From one disk's `lsblk` tree: the ZFS pool it belongs to (a `zfs_member`
+/// partition or disk, labelled with the pool's name), or else why it isn't
+/// free for a new pool. Matches what `poolmgr::safety` will refuse, so the
+/// UI never offers a disk the backend won't take.
+pub(crate) fn disk_usage(disk: &serde_json::Value) -> (Option<String>, Option<String>) {
+    let mut nodes = vec![disk];
+    let mut i = 0;
+    while i < nodes.len() {
+        if let Some(children) = nodes[i].get("children").and_then(|v| v.as_array()) {
+            nodes.extend(children.iter());
+        }
+        i += 1;
+    }
+    let field = |n: &serde_json::Value, k: &str| n.get(k).and_then(|v| v.as_str()).map(str::to_string);
+
+    if let Some(pool) = nodes
+        .iter()
+        .find(|n| field(n, "fstype").as_deref() == Some("zfs_member"))
+        .and_then(|n| field(n, "label"))
+    {
+        return (Some(pool), None);
+    }
+    let mounts: Vec<String> = nodes.iter().filter_map(|n| field(n, "mountpoint")).collect();
+    let reason = if mounts.iter().any(|m| m == "/" || m.starts_with("/boot") || m == "/efi") {
+        Some("system disk".to_string())
+    } else if !mounts.is_empty() {
+        Some(format!("mounted at {}", mounts.join(", ")))
+    } else if nodes.len() > 1 || field(disk, "pttype").is_some() {
+        Some("has partitions — wipe it first to use it in a pool".to_string())
+    } else if let Some(fs) = field(disk, "fstype") {
+        Some(format!("has a {fs} filesystem — wipe it first to use it in a pool"))
+    } else {
+        None
+    };
+    (None, reason)
 }
 
 /// Best-effort S.M.A.R.T. read. Returns (status, temp_c, power_on_hours).
@@ -450,5 +493,32 @@ fn json_u64(v: Option<&serde_json::Value>) -> u64 {
         Some(serde_json::Value::Number(n)) => n.as_u64().unwrap_or(0),
         Some(serde_json::Value::String(s)) => s.parse().unwrap_or(0),
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod disk_usage_tests {
+    use super::disk_usage;
+    use serde_json::json;
+
+    #[test]
+    fn pool_member_is_named_by_its_label() {
+        let d = json!({"name":"sdb","type":"disk","children":[
+            {"name":"sdb1","fstype":"zfs_member","label":"tank"},{"name":"sdb9"}]});
+        assert_eq!(disk_usage(&d), (Some("tank".into()), None));
+    }
+
+    #[test]
+    fn system_disk_and_partitioned_disks_are_not_free() {
+        let sys = json!({"name":"vda","type":"disk","pttype":"gpt","children":[
+            {"name":"vda1","fstype":"vfat","mountpoint":"/efi"},{"name":"vda2","fstype":"ext4","mountpoint":"/"}]});
+        assert_eq!(disk_usage(&sys).1.as_deref(), Some("system disk"));
+        let used = json!({"name":"sdc","type":"disk","pttype":"gpt","children":[{"name":"sdc1","fstype":"ntfs"}]});
+        assert!(disk_usage(&used).1.unwrap().contains("partitions"));
+    }
+
+    #[test]
+    fn blank_disk_is_free() {
+        assert_eq!(disk_usage(&json!({"name":"sdd","type":"disk"})), (None, None));
     }
 }

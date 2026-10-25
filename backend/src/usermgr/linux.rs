@@ -91,6 +91,14 @@ impl UserOps for LinuxUserOps {
         // Best-effort: see module doc on why an orphaned smbpasswd entry
         // isn't the failure mode that matters here.
         let _ = run("smbpasswd", &["-x", username]);
+        // Accounts this module creates are system accounts (below 1000). A
+        // regular one — e.g. the console login the installer set up, which a
+        // dashboard user of the same name maps onto — belongs to a person,
+        // not to FerrousNAS: removing its Samba access is all we may do.
+        if uid_of(username).is_some_and(|uid| uid >= 1000) {
+            tracing::info!("users: '{username}' is a regular login account; removed its Samba access only");
+            return Ok(());
+        }
         ensure_absent("userdel", &[username])
     }
 
@@ -103,6 +111,11 @@ impl UserOps for LinuxUserOps {
         validate_group_name(name)?;
         ensure_absent("groupdel", &[name])
     }
+}
+
+fn uid_of(username: &str) -> Option<u32> {
+    let out = Command::new("id").args(["-u", username]).output().ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
 fn run(cmd: &str, args: &[&str]) -> ApiResult<Output> {

@@ -78,6 +78,17 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
   const tel = useAsync(api.telemetrySource);
   const live = tel.data?.source === "linux";
   const realApps = tel.data?.apps === "docker";
+  // Subsystems still on their mock backend, for the sidebar's footer.
+  const simulated = tel.data
+    ? ([
+        ["storage", tel.data.pools],
+        ["shares", tel.data.shares],
+        ["users", tel.data.users],
+        ["power", tel.data.power],
+      ] as const)
+        .filter(([, src]) => !src || src === "mock")
+        .map(([name]) => name)
+    : [];
 
   return (
     <div className="app">
@@ -99,11 +110,15 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
         </nav>
         <div className="foot">
           {realApps ? (
-            <>
-              Apps run for real, in Docker.
-              <br />
-              Storage, shares, users and power are simulated.
-            </>
+            simulated.length === 0 ? (
+              <>Everything here is real: changes affect this machine.</>
+            ) : (
+              <>
+                Apps run for real, in Docker.
+                <br />
+                Simulated: {simulated.join(", ")}.
+              </>
+            )
           ) : (
             <>
               All operations are simulated.

@@ -62,7 +62,10 @@ export default function Storage() {
                     <button
                       className="btn sm danger"
                       onClick={async () => {
-                        if (!confirm(`Destroy pool "${p.name}"? (mock)`)) return;
+                        const typed = prompt(
+                          `Destroying "${p.name}" permanently erases every dataset and file in it.\n\nType the pool name to confirm:`
+                        );
+                        if (typed !== p.name) return;
                         try { await api.deletePool(p.id); toast(`Destroyed ${p.name}`); reloadAll(); }
                         catch (e) { toast(String((e as Error).message), true); }
                       }}
@@ -98,7 +101,7 @@ export default function Storage() {
                     <td>{fmtBytes(d.size_bytes)}</td>
                     <td>{d.temp_c.toFixed(0)}°C</td>
                     <td><Badge tone={smartTone[d.smart]}>{d.smart}</Badge></td>
-                    <td className="faint">{d.pool_id ? poolName(d.pool_id) : "—"}</td>
+                    <td className="faint">{d.pool_id ? poolName(d.pool_id) : d.in_use ?? "free"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -150,7 +153,7 @@ export default function Storage() {
 
       {showPool && (
         <CreatePoolModal
-          freeDisks={disks.data?.filter((d) => !d.pool_id) ?? []}
+          freeDisks={disks.data?.filter((d) => !d.pool_id && !d.in_use) ?? []}
           onClose={() => setShowPool(false)}
           onDone={() => { setShowPool(false); reloadAll(); }}
         />
@@ -215,7 +218,12 @@ function CreatePoolModal({
       <label className="field">
         <span>Member disks ({selected.size} selected)</span>
       </label>
-      {freeDisks.length === 0 && <div className="faint">No free disks available.</div>}
+      {freeDisks.length === 0 && (
+        <div className="faint">
+          No free disks. A disk is free when it's blank: not the system disk, not in a pool, and without
+          partitions or a filesystem.
+        </div>
+      )}
       <div className="vstack" style={{ gap: 6, maxHeight: 180, overflow: "auto" }}>
         {freeDisks.map((d) => (
           <label key={d.id} className="checkbox">
@@ -225,10 +233,15 @@ function CreatePoolModal({
           </label>
         ))}
       </div>
+      {selected.size > 0 && (
+        <div className="faint" style={{ marginTop: 10 }}>
+          ⚠ Everything on the selected disk{selected.size > 1 ? "s" : ""} becomes part of the new pool.
+        </div>
+      )}
       <div className="actions">
         <button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={busy || !name || selected.size === 0} onClick={submit}>
-          Create
+          {busy ? "Creating…" : "Create"}
         </button>
       </div>
     </Modal>

@@ -21,24 +21,34 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use async_trait::async_trait;
+use tokio::sync::Mutex;
 
 use super::{do_create, do_delete, do_patch, ShareManager};
 use crate::error::{ApiError, ApiResult};
 use crate::models::{CreateShareReq, PatchShareReq, Share, ShareKind};
-use crate::state::Db;
+use crate::poolmgr::PoolManagerRef;
 
 const DEFAULT_SMB: &str = "/etc/samba/ferrousnas-shares.conf";
 const DEFAULT_NFS: &str = "/etc/exports.d/ferrousnas.exports";
 
+/// Group every shared folder belongs to (Debian's standard `users`, gid 100).
+/// SMB access is forced to it and NFS access squashed to it, so whoever
+/// connects can write wherever the share allows, whatever their own uid.
+const SHARE_GROUP: &str = "users";
+const SHARE_GID: u32 = 100;
+
 pub struct LinuxShareManager {
-    db: Db,
+    shares: Mutex<Vec<Share>>,
+    pools: PoolManagerRef,
     smb_path: PathBuf,
     nfs_path: PathBuf,
+    /// Where the share list is saved, so shares survive a restart.
+    state_path: PathBuf,
     reload: bool,
 }
 
 impl LinuxShareManager {
-    pub fn new(db: Db) -> Result<Self, String> {
+    pub async fn new(pools: PoolManagerRef) -> Result<Self, String> {
         let smb_path = PathBuf::from(
             std::env::var("FERROUS_SMB_CONF").unwrap_or_else(|_| DEFAULT_SMB.to_string()),
         );
@@ -46,12 +56,26 @@ impl LinuxShareManager {
             std::env::var("FERROUS_NFS_EXPORTS").unwrap_or_else(|_| DEFAULT_NFS.to_string()),
         );
         let reload = std::env::var("FERROUS_SHARES_RELOAD").as_deref() != Ok("0");
+        let state_path = PathBuf::from(
+            std::env::var("FERROUS_STATE_DIR").unwrap_or_else(|_| "/var/lib/ferrous-nas".into()),
+        )
+        .join("shares.json");
 
         // Fail fast (and fall back to the mock) if we can't own these files.
         probe_writable(&smb_path)?;
         probe_writable(&nfs_path)?;
 
-        Ok(Self { db, smb_path, nfs_path, reload })
+        let shares = match fs::read_to_string(&state_path) {
+            Ok(json) => serde_json::from_str(&json)
+                .map_err(|e| format!("{} is unreadable: {e}", state_path.display()))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(format!("{}: {e}", state_path.display())),
+        };
+        let m = Self { shares: Mutex::new(shares), pools, smb_path, nfs_path, state_path, reload };
+        // Bring the config files in line with the saved list (e.g. after a
+        // crash between saving and rendering).
+        m.sync(&m.shares.lock().await).map_err(|e| e.to_string())?;
+        Ok(m)
     }
 
     pub fn smb_path(&self) -> &Path {
@@ -61,13 +85,14 @@ impl LinuxShareManager {
         &self.nfs_path
     }
 
-    /// Re-render both config files from the current share set, then reload.
-    async fn sync(&self) -> ApiResult<()> {
-        let shares = self.db.read().await.shares.clone();
-
-        write_atomic(&self.smb_path, &render_smb(&shares, &self.smb_path))
+    /// Save the share list, re-render both config files from it, then reload.
+    fn sync(&self, shares: &[Share]) -> ApiResult<()> {
+        let json = serde_json::to_string_pretty(shares).unwrap_or_default();
+        write_atomic(&self.state_path, &json)
+            .map_err(|e| ApiError::BadRequest(format!("saving {}: {e}", self.state_path.display())))?;
+        write_atomic(&self.smb_path, &render_smb(shares, &self.smb_path))
             .map_err(|e| ApiError::BadRequest(format!("writing {}: {e}", self.smb_path.display())))?;
-        write_atomic(&self.nfs_path, &render_nfs(&shares))
+        write_atomic(&self.nfs_path, &render_nfs(shares))
             .map_err(|e| ApiError::BadRequest(format!("writing {}: {e}", self.nfs_path.display())))?;
 
         if self.reload {
@@ -84,26 +109,43 @@ impl ShareManager for LinuxShareManager {
     }
 
     async fn list(&self) -> ApiResult<Vec<Share>> {
-        Ok(self.db.read().await.shares.clone())
+        Ok(self.shares.lock().await.clone())
     }
 
     async fn create(&self, req: CreateShareReq) -> ApiResult<Share> {
-        let share = do_create(&mut *self.db.write().await, &req)?;
-        self.sync().await?;
+        let datasets = self.pools.datasets().await?;
+        let mut shares = self.shares.lock().await;
+        let share = do_create(&mut shares, &datasets, &req)?;
+        if let Err(e) = prepare_folder(Path::new(&share.path)).and_then(|_| self.sync(&shares)) {
+            shares.retain(|s| s.id != share.id);
+            return Err(e);
+        }
         Ok(share)
     }
 
     async fn patch(&self, id: &str, req: PatchShareReq) -> ApiResult<Share> {
-        let share = do_patch(&mut *self.db.write().await, id, &req)?;
-        self.sync().await?;
+        let mut shares = self.shares.lock().await;
+        let share = do_patch(&mut shares, id, &req)?;
+        self.sync(&shares)?;
         Ok(share)
     }
 
     async fn delete(&self, id: &str) -> ApiResult<()> {
-        do_delete(&mut *self.db.write().await, id)?;
-        self.sync().await?;
+        let mut shares = self.shares.lock().await;
+        do_delete(&mut shares, id)?;
+        self.sync(&shares)?;
         Ok(())
     }
+}
+
+/// Make a shared folder writable through the share: group [`SHARE_GROUP`],
+/// group-writable, setgid so new files and folders inherit the group. Only
+/// the folder itself — existing contents keep their permissions.
+fn prepare_folder(path: &Path) -> ApiResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let fail = |e: std::io::Error| ApiError::BadRequest(format!("preparing {}: {e}", path.display()));
+    std::os::unix::fs::chown(path, None, Some(SHARE_GID)).map_err(fail)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o2775)).map_err(fail)
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +174,11 @@ pub(crate) fn render_smb(shares: &[Share], self_path: &Path) -> String {
         out.push_str("   browseable = yes\n");
         out.push_str(&format!("   read only = {}\n", yes_no(s.read_only)));
         out.push_str(&format!("   guest ok = {}\n", yes_no(s.guest_ok)));
+        // See SHARE_GROUP: files are created in the folder's group, and
+        // stay writable by everyone who can use the share.
+        out.push_str(&format!("   force group = {SHARE_GROUP}\n"));
+        out.push_str("   create mask = 0664\n");
+        out.push_str("   directory mask = 2775\n");
         if !s.allowed_users.is_empty() {
             let users: Vec<String> = s.allowed_users.iter().map(|u| sanitize(u)).collect();
             out.push_str(&format!("   valid users = {}\n", users.join(" ")));
@@ -147,8 +194,10 @@ pub(crate) fn render_nfs(shares: &[Share]) -> String {
 
     for s in shares.iter().filter(|s| s.kind == ShareKind::Nfs && s.enabled) {
         let mode = if s.read_only { "ro" } else { "rw" };
+        // NFS trusts client uids, which don't match this machine's; squash
+        // everyone to nobody in SHARE_GROUP, which can write the folder.
         out.push_str(&format!(
-            "{} *({mode},sync,no_subtree_check,root_squash)\n",
+            "{} *({mode},sync,no_subtree_check,all_squash,anonuid=65534,anongid={SHARE_GID})\n",
             sanitize(&s.path)
         ));
     }
@@ -169,9 +218,8 @@ fn yes_no(b: bool) -> &'static str {
 
 fn probe_writable(path: &Path) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        if !dir.exists() {
-            return Err(format!("{} does not exist", dir.display()));
-        }
+        // e.g. /etc/exports.d, which nfs-kernel-server doesn't create.
+        fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     fs::OpenOptions::new()
         .create(true)
@@ -254,6 +302,7 @@ mod tests {
         assert!(out.contains("   path = /mnt/tank/media"));
         assert!(out.contains("   read only = no"));
         assert!(out.contains("   guest ok = yes"));
+        assert!(out.contains("   force group = users"));
         assert!(!out.contains("[Off]"), "disabled share must not be exported");
         assert!(!out.contains("[Nfsy]"), "NFS share must not appear in smb.conf");
     }
@@ -283,8 +332,8 @@ mod tests {
             share("Smbish", ShareKind::Smb, true, false, false, &[]),
         ];
         let out = render_nfs(&shares);
-        assert!(out.contains("/mnt/tank/photos *(ro,sync,no_subtree_check,root_squash)"));
-        assert!(out.contains("/mnt/tank/scratch *(rw,sync,no_subtree_check,root_squash)"));
+        assert!(out.contains("/mnt/tank/photos *(ro,sync,no_subtree_check,all_squash,anonuid=65534,anongid=100)"));
+        assert!(out.contains("/mnt/tank/scratch *(rw,sync,no_subtree_check,all_squash,anonuid=65534,anongid=100)"));
         assert!(!out.contains("disabled"));
         assert!(!out.contains("smbish"), "SMB share must not appear in exports");
     }

@@ -100,17 +100,30 @@ sudo mkosi --environment=FERROUS_ADMIN_USER=<name> \
 
 `ferrous-console-user.service` creates the account on first boot.
 
-The shipped systemd unit runs **apps for real** (`FERROUS_APPS=docker`, with
-the `ferrous` account in the `docker` group) and every other subsystem in its
-default **mocked** mode — add `Environment=FERROUS_TELEMETRY=linux` etc. to
-`/etc/systemd/system/ferrous-nasd.service` after boot to turn on the other
-real backends you want; see the README's env var table. Apps keep their files
-people use (media, downloads, scans) under `/srv/ferrous-nas`, and the image
-turns off systemd-resolved's stub listener on 127.0.0.53:53 so Pi-hole or
-AdGuard Home can serve DNS on port 53. One caveat:
-`FERROUS_POWER=systemd` calls `systemctl reboot`/`poweroff` as the
-unprivileged `ferrous` account, which most systems will refuse via polkit
-until a rule grants it that permission — not something this repo sets up.
+The shipped systemd unit runs **every subsystem for real**: this machine's
+telemetry and disks, store apps as Docker containers, ZFS pools and datasets,
+SMB/NFS shares, OS/Samba accounts for dashboard users, and power actions (see
+the README's env var table; remove an `Environment=` line from
+`/etc/systemd/system/ferrous-nasd.service` to put that subsystem back on its
+mock). It runs as root, since all of those need it, and without systemd's
+mount-namespace sandboxing, so pools it creates are mounted where Samba and
+NFS can see them.
+
+- **Pools** only ever use blank disks — never the system disk, a pool member,
+  or a disk with partitions or a filesystem (the Storage page shows why a
+  disk isn't free). Destroying a pool means typing its name.
+- **Shares** are saved in `/var/lib/ferrous-nas/shares.json` and rendered to
+  `/etc/samba/ferrousnas-shares.conf` and `/etc/exports.d/ferrousnas.exports`.
+  Shared folders are group `users` with mode 2775; SMB access is forced to
+  that group and NFS access squashed to `nobody:users`, so every user (and
+  guest, where allowed) can write. Sign in to SMB with your dashboard
+  username and password — the first admin gets a Samba account at setup.
+- **Users**: a dashboard user maps onto the OS account of the same name.
+  Deleting one never deletes a regular login account (uid 1000+, like the
+  console login the installer creates); it only removes its Samba access.
+- **Apps** keep the files people use (media, downloads, scans) under
+  `/srv/ferrous-nas`, and the image turns off systemd-resolved's stub
+  listener on 127.0.0.53:53 so Pi-hole or AdGuard Home can serve DNS.
 
 ### Installer ISO
 
@@ -160,7 +173,7 @@ How it works:
   the same install runs as a text menu on tty1 (`ferrous-install`, which
   also does the actual work for the wizard).
 - The installed system is byte-for-byte the mkosi disk image, so everything
-  above (first-boot admin setup, real apps, other backends mocked) applies
+  above (first-boot admin setup, real backends) applies
   unchanged. The text menu also has a rescue shell.
 
 ## Option B — the CasaOS-style installer

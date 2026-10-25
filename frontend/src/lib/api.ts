@@ -54,6 +54,8 @@ export interface Disk {
   smart: SmartStatus;
   power_on_hours: number;
   pool_id: string | null;
+  /** Why the disk can't go into a new pool, if it can't. */
+  in_use?: string;
 }
 
 export interface Pool {
@@ -205,7 +207,8 @@ export const api = {
   },
 
   system: () => req<SystemInfo>("/system"),
-  telemetrySource: () => req<{ source: string; apps?: string }>("/system/telemetry"),
+  telemetrySource: () =>
+    req<{ source: string; apps?: string; pools?: string; shares?: string; users?: string; power?: string }>("/system/telemetry"),
   stats: (points = 60) => req<StatPoint[]>(`/system/stats?points=${points}`),
   reboot: () => post<{ ok: boolean }>("/system/reboot"),
   shutdown: () => post<{ ok: boolean }>("/system/shutdown"),

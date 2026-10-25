@@ -13,10 +13,12 @@
 //! (unset / anything else)    # mocked
 //! ```
 //!
-//! **The store stays the source of truth.** The real config files are a
-//! projection of `store.shares`, re-rendered in full after every mutation. That
-//! keeps listing consistent between backends and means the on-disk config can
-//! always be regenerated from the API state.
+//! **The share list is the source of truth.** The real config files are a
+//! projection of it, re-rendered in full after every mutation, so the on-disk
+//! config can always be regenerated from the API state. The mock keeps its
+//! list in the seeded store; the real backend keeps its own, saved to the
+//! state dir, and resolves datasets through the active pool backend (so real
+//! shares point at real ZFS datasets, never at the mock's).
 //!
 //! **Nothing the admin owns is edited in place.** FerrousNAS writes only its
 //! own managed files (a Samba `include` fragment and an `/etc/exports.d`
@@ -30,7 +32,8 @@ use async_trait::async_trait;
 
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
-use crate::state::{Db, Store};
+use crate::poolmgr::PoolManagerRef;
+use crate::state::Db;
 
 pub type ShareManagerRef = Arc<dyn ShareManager>;
 
@@ -43,9 +46,9 @@ pub trait ShareManager: Send + Sync {
     async fn delete(&self, id: &str) -> ApiResult<()>;
 }
 
-pub fn build(db: Db) -> ShareManagerRef {
+pub async fn build(db: Db, pools: PoolManagerRef) -> ShareManagerRef {
     match std::env::var("FERROUS_SHARES").as_deref() {
-        Ok("linux") | Ok("real") => match linux::LinuxShareManager::new(db.clone()) {
+        Ok("linux") | Ok("real") => match linux::LinuxShareManager::new(pools).await {
             Ok(m) => {
                 tracing::info!(
                     "shares: using real SMB/NFS backend (smb={}, nfs={})",
@@ -67,21 +70,20 @@ pub fn build(db: Db) -> ShareManagerRef {
 }
 
 // ---------------------------------------------------------------------------
-// Store mutations — shared by both backends so behaviour can't drift.
+// Share-list mutations — shared by both backends so behaviour can't drift.
 // ---------------------------------------------------------------------------
 
-pub(crate) fn do_create(store: &mut Store, req: &CreateShareReq) -> ApiResult<Share> {
+pub(crate) fn do_create(shares: &mut Vec<Share>, datasets: &[Dataset], req: &CreateShareReq) -> ApiResult<Share> {
     if req.name.trim().is_empty() {
         return Err(ApiError::BadRequest("share name is required".into()));
     }
-    let path = store
-        .datasets
+    let path = datasets
         .iter()
         .find(|d| d.id == req.dataset_id)
         .map(|d| d.path.clone())
         .ok_or_else(|| ApiError::BadRequest(format!("unknown dataset {}", req.dataset_id)))?;
 
-    if store.shares.iter().any(|s| s.name == req.name) {
+    if shares.iter().any(|s| s.name == req.name) {
         return Err(ApiError::Conflict(format!("share '{}' already exists", req.name)));
     }
 
@@ -96,13 +98,12 @@ pub(crate) fn do_create(store: &mut Store, req: &CreateShareReq) -> ApiResult<Sh
         guest_ok: req.guest_ok,
         allowed_users: req.allowed_users.clone(),
     };
-    store.shares.push(share.clone());
+    shares.push(share.clone());
     Ok(share)
 }
 
-pub(crate) fn do_patch(store: &mut Store, id: &str, req: &PatchShareReq) -> ApiResult<Share> {
-    let share = store
-        .shares
+pub(crate) fn do_patch(shares: &mut [Share], id: &str, req: &PatchShareReq) -> ApiResult<Share> {
+    let share = shares
         .iter_mut()
         .find(|s| s.id == id)
         .ok_or_else(|| ApiError::NotFound(format!("share {id} not found")))?;
@@ -118,13 +119,12 @@ pub(crate) fn do_patch(store: &mut Store, id: &str, req: &PatchShareReq) -> ApiR
     Ok(share.clone())
 }
 
-pub(crate) fn do_delete(store: &mut Store, id: &str) -> ApiResult<()> {
-    let idx = store
-        .shares
+pub(crate) fn do_delete(shares: &mut Vec<Share>, id: &str) -> ApiResult<()> {
+    let idx = shares
         .iter()
         .position(|s| s.id == id)
         .ok_or_else(|| ApiError::NotFound(format!("share {id} not found")))?;
-    store.shares.remove(idx);
+    shares.remove(idx);
     Ok(())
 }
 
@@ -144,12 +144,13 @@ impl ShareManager for MockShareManager {
         Ok(self.db.read().await.shares.clone())
     }
     async fn create(&self, req: CreateShareReq) -> ApiResult<Share> {
-        do_create(&mut *self.db.write().await, &req)
+        let store = &mut *self.db.write().await;
+        do_create(&mut store.shares, &store.datasets, &req)
     }
     async fn patch(&self, id: &str, req: PatchShareReq) -> ApiResult<Share> {
-        do_patch(&mut *self.db.write().await, id, &req)
+        do_patch(&mut self.db.write().await.shares, id, &req)
     }
     async fn delete(&self, id: &str) -> ApiResult<()> {
-        do_delete(&mut *self.db.write().await, id)
+        do_delete(&mut self.db.write().await.shares, id)
     }
 }
