@@ -350,6 +350,7 @@ fn seed_interfaces() -> Vec<NetInterface> {
             speed_mbps: 2500,
             rx_bytes: 84_213_998_112,
             tx_bytes: 22_909_113_004,
+            dhcp: true,
         },
         NetInterface {
             name: "eth1".to_string(),
@@ -361,6 +362,7 @@ fn seed_interfaces() -> Vec<NetInterface> {
             speed_mbps: 1000,
             rx_bytes: 0,
             tx_bytes: 0,
+            dhcp: false,
         },
         NetInterface {
             name: "docker0".to_string(),
@@ -372,6 +374,7 @@ fn seed_interfaces() -> Vec<NetInterface> {
             speed_mbps: 0,
             rx_bytes: 1_223_119,
             tx_bytes: 3_998_221,
+            dhcp: false,
         },
     ]
 }

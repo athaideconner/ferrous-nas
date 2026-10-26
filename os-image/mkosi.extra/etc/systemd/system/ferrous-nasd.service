@@ -16,7 +16,7 @@ Environment=FERROUS_ADDR=0.0.0.0:4200
 Environment=FERROUS_WEB_DIR=/usr/local/share/ferrous-nas/web
 Environment=RUST_LOG=info
 # Everything real (see the README's env var table):
-#   telemetry — this machine's own stats and disks
+#   telemetry — this machine's own stats, disks and network
 #   apps      — store apps run as Docker containers
 #   pools     — ZFS pools and datasets; destructive operations (creating or
 #               destroying a pool, destroying a dataset) are enabled, and

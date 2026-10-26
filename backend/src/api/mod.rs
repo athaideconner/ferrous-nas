@@ -78,5 +78,6 @@ fn protected(auth: AuthRef) -> Router<AppState> {
         .route("/groups/:id", delete(users::delete_group))
         // network
         .route("/network/interfaces", get(network::list_interfaces))
+        .route("/network/summary", get(network::summary))
         .layer(axum::middleware::from_fn_with_state(auth, require_auth))
 }

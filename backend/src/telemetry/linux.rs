@@ -17,7 +17,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 
-use crate::models::{CpuInfo, Disk, DiskKind, MemoryInfo, SmartStatus, StatPoint, SystemInfo};
+use crate::models::{
+    CpuInfo, Disk, DiskKind, MemoryInfo, NetInterface, NetworkSummary, SmartStatus, StatPoint, SystemInfo,
+};
 
 use super::Telemetry;
 
@@ -162,6 +164,14 @@ impl Telemetry for LinuxTelemetry {
 
     async fn disks(&self) -> Vec<Disk> {
         read_disks()
+    }
+
+    async fn interfaces(&self) -> Vec<NetInterface> {
+        super::net::interfaces()
+    }
+
+    async fn network_summary(&self) -> NetworkSummary {
+        super::net::summary()
     }
 }
 

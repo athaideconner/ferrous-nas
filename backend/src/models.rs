@@ -245,6 +245,16 @@ pub struct NetInterface {
     pub speed_mbps: u32,
     pub rx_bytes: u64,
     pub tx_bytes: u64,
+    /// Whether its IPv4 address came from DHCP (rather than being set).
+    pub dhcp: bool,
+}
+
+/// Machine-wide network settings, for the Network page.
+#[derive(Debug, Clone, Serialize)]
+pub struct NetworkSummary {
+    pub hostname: String,
+    pub gateway: Option<String>,
+    pub dns: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

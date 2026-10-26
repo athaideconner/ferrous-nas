@@ -77,18 +77,20 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
   const title = TITLES[loc.pathname] ?? "FerrousNAS";
   const tel = useAsync(api.telemetrySource);
   const live = tel.data?.source === "linux";
-  const realApps = tel.data?.apps === "docker";
-  // Subsystems still on their mock backend, for the sidebar's footer.
-  const simulated = tel.data
+  // Each subsystem and its backend, for saying in the sidebar what's real.
+  const subsystems = tel.data
     ? ([
+        ["apps", tel.data.apps],
         ["storage", tel.data.pools],
         ["shares", tel.data.shares],
         ["users", tel.data.users],
         ["power", tel.data.power],
+        ["network", tel.data.source],
       ] as const)
-        .filter(([, src]) => !src || src === "mock")
-        .map(([name]) => name)
     : [];
+  const simulated = subsystems.filter(([, src]) => !src || src === "mock").map(([name]) => name);
+  const real = subsystems.map(([name]) => name).filter((name) => !simulated.includes(name));
+  const allSimulated = subsystems.length > 0 && simulated.length === subsystems.length;
 
   return (
     <div className="app">
@@ -97,7 +99,7 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
           <div className="logo">🗄️</div>
           <div>
             <div className="name">FerrousNAS</div>
-            <div className="ver">control plane{realApps ? "" : " · mock"}</div>
+            <div className="ver">control plane{allSimulated ? " · mock" : ""}</div>
           </div>
         </div>
         <nav className="nav">
@@ -109,25 +111,23 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
           ))}
         </nav>
         <div className="foot">
-          {realApps ? (
-            simulated.length === 0 ? (
-              <>
-                Storage, shares, apps, users and power are real: changes affect this machine.
-                <br />
-                The Network page and notifications are still sample data.
-              </>
-            ) : (
-              <>
-                Apps run for real, in Docker.
-                <br />
-                Simulated: {simulated.join(", ")}.
-              </>
-            )
-          ) : (
+          {subsystems.length === 0 ? null : allSimulated ? (
             <>
               All operations are simulated.
               <br />
               No real disks are touched.
+            </>
+          ) : simulated.length === 0 ? (
+            <>
+              Storage, shares, apps, users, network and power are real: changes affect this machine.
+              <br />
+              Notifications are still sample data.
+            </>
+          ) : (
+            <>
+              Real: {real.join(", ")}.
+              <br />
+              Simulated: {simulated.join(", ")}.
             </>
           )}
         </div>

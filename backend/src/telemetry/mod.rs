@@ -6,7 +6,8 @@
 //! - [`MockTelemetry`] — the default. Reads the seeded in-memory store, exactly
 //!   as the rest of the app does. No hardware is touched.
 //! - [`linux::LinuxTelemetry`] — reads real signals from `/proc`, `sysfs`,
-//!   `lsblk` and `smartctl`. Read-only and safe: it never writes anything.
+//!   `lsblk`, `smartctl` and `ip`. Read-only and safe: it never writes
+//!   anything.
 //!
 //! Selection is by env var so the mock stays the default:
 //!
@@ -21,12 +22,13 @@
 //! step — see docs/ARCHITECTURE.md).
 
 pub mod linux;
+pub mod net;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::models::{Disk, StatPoint, SystemInfo};
+use crate::models::{Disk, NetInterface, NetworkSummary, StatPoint, SystemInfo};
 use crate::state::Db;
 
 pub type TelemetryRef = Arc<dyn Telemetry>;
@@ -38,6 +40,8 @@ pub trait Telemetry: Send + Sync {
     async fn system_info(&self) -> SystemInfo;
     async fn stats_history(&self, points: usize) -> Vec<StatPoint>;
     async fn disks(&self) -> Vec<Disk>;
+    async fn interfaces(&self) -> Vec<NetInterface>;
+    async fn network_summary(&self) -> NetworkSummary;
 }
 
 /// Build the telemetry source chosen by the environment. Falls back to the
@@ -79,5 +83,15 @@ impl Telemetry for MockTelemetry {
     }
     async fn disks(&self) -> Vec<Disk> {
         self.db.read().await.disks.clone()
+    }
+    async fn interfaces(&self) -> Vec<NetInterface> {
+        self.db.read().await.interfaces.clone()
+    }
+    async fn network_summary(&self) -> NetworkSummary {
+        NetworkSummary {
+            hostname: self.db.read().await.hostname.clone(),
+            gateway: Some("192.168.1.1".into()),
+            dns: vec!["192.168.1.1".into()],
+        }
     }
 }

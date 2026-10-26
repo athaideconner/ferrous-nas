@@ -101,7 +101,7 @@ sudo mkosi --environment=FERROUS_ADMIN_USER=<name> \
 `ferrous-console-user.service` creates the account on first boot.
 
 The shipped systemd unit runs **every subsystem for real**: this machine's
-telemetry and disks, store apps as Docker containers, ZFS pools and datasets,
+telemetry, disks and network, store apps as Docker containers, ZFS pools and datasets,
 SMB/NFS shares, OS/Samba accounts for dashboard users, and power actions (see
 the README's env var table; remove an `Environment=` line from
 `/etc/systemd/system/ferrous-nasd.service` to put that subsystem back on its

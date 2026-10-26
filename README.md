@@ -140,7 +140,7 @@ is a host-level task rather than something this repo builds on its own.
 | `FERROUS_TLS` | _(unset → **on**)_ | Set to `off` to serve plain HTTP (e.g. behind a reverse proxy that terminates TLS itself) |
 | `FERROUS_TLS_CERT` / `FERROUS_TLS_KEY` | _(unset → self-signed)_ | Paths to a real certificate/key. Both or neither — a self-signed pair is generated into `FERROUS_STATE_DIR` when neither is set. |
 | `FERROUS_WEB_DIR` | `../frontend/dist` | Where to serve the built dashboard from |
-| `FERROUS_TELEMETRY` | _(unset → mock)_ | Set to `linux` (or `real`) to serve **real, read-only** host telemetry — system stats and disks from `/proc`, `sysfs`, `lsblk` and `smartctl`. Everything else stays mocked. |
+| `FERROUS_TELEMETRY` | _(unset → mock)_ | Set to `linux` (or `real`) to serve **real, read-only** host telemetry — system stats, disks and network (interfaces, gateway, DNS) from `/proc`, `sysfs`, `lsblk`, `smartctl` and `ip`. Everything else stays mocked. |
 | `FERROUS_APPS` | _(unset → mock)_ | Set to `docker` (or `real`) to manage **real containers** via the Docker Engine socket (pull/create/start/stop/remove). Falls back to mock if Docker isn't reachable. |
 | `FERROUS_SHARES` | _(unset → mock)_ | Set to `linux` (or `real`) to render **real SMB/NFS config** and reload the services. Falls back to mock if the config files aren't writable. |
 | `FERROUS_SMB_CONF` | `/etc/samba/ferrousnas-shares.conf` | Managed Samba fragment to write |

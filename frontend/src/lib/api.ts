@@ -143,6 +143,14 @@ export interface NetInterface {
   speed_mbps: number;
   rx_bytes: number;
   tx_bytes: number;
+  /** Whether the IPv4 address came from DHCP. */
+  dhcp: boolean;
+}
+
+export interface NetworkSummary {
+  hostname: string;
+  gateway: string | null;
+  dns: string[];
 }
 
 export interface Alert {
@@ -271,6 +279,7 @@ export const api = {
   deleteGroup: (id: string) => del<{ ok: boolean }>(`/groups/${id}`),
 
   interfaces: () => req<NetInterface[]>("/network/interfaces"),
+  networkSummary: () => req<NetworkSummary>("/network/summary"),
 };
 
 // --- formatting helpers ---------------------------------------------------
