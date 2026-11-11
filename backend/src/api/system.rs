@@ -71,7 +71,13 @@ pub async fn shutdown(_admin: AdminUser, State(mgr): State<PowerManagerRef>) -> 
     Ok(Json(json!({ "ok": true, "action": "shutdown", "source": mgr.source() })))
 }
 
-pub async fn list_alerts(State(db): State<Db>) -> Json<Vec<Alert>> {
+/// Notifications. Only the mock has any: they're seeded sample data, and
+/// nothing generates real ones yet — so with real telemetry this is empty,
+/// rather than warning about a failing disk this machine doesn't have.
+pub async fn list_alerts(State(db): State<Db>, State(tel): State<TelemetryRef>) -> Json<Vec<Alert>> {
+    if tel.source() != "mock" {
+        return Json(Vec::new());
+    }
     Json(db.read().await.alerts.clone())
 }
 

@@ -218,7 +218,7 @@ function SourcesNote() {
   return (
     <div className="pop-note">
       {simulated.length === 0
-        ? "Everything here changes this machine for real (notifications are sample data)."
+        ? "Everything here changes this machine for real."
         : simulated.length === subsystems.length
           ? "Demo mode: everything is simulated; no real disks are touched."
           : `Real: ${real.join(", ")}. Simulated: ${simulated.join(", ")}.`}
