@@ -36,7 +36,51 @@ export default function Apps() {
 
   return (
     <>
-      <div className="card" style={{ marginBottom: 22 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", margin: "0 0 12px" }}>
+        <div className="section-title" style={{ margin: 0 }}>App store</div>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          {categories.map((c) => (
+            <button key={c} className={"btn sm" + (c === cat ? " primary" : " ghost")} onClick={() => setCat(c)}>{c}</button>
+          ))}
+        </div>
+      </div>
+      <Async state={catalog}>
+        {(list) => (
+          <div className="grid cols-3">
+            {list.filter((c) => cat === "All" || c.category === cat).map((c) => {
+              const installed = installedIds.has(c.id);
+              const busy = installing.has(c.id);
+              return (
+                <div key={c.id} className="appcard">
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <span className="ico">{c.icon}</span>
+                    <Badge tone="gray">{c.category}</Badge>
+                  </div>
+                  <div>
+                    <div className="title">{c.name}</div>
+                    <div className="tag">{c.tagline}</div>
+                  </div>
+                  <div className="desc">{c.description}</div>
+                  <button
+                    className={"btn sm" + (installed ? "" : " primary")}
+                    disabled={installed || busy}
+                    onClick={async () => {
+                      // Downloading an app can take minutes.
+                      setInstalling((s) => new Set(s).add(c.id));
+                      await act(() => api.installApp({ catalog_id: c.id }), `Installed ${c.name}`);
+                      setInstalling((s) => { const n = new Set(s); n.delete(c.id); return n; });
+                    }}
+                  >
+                    {installed ? "✓ Installed" : busy ? "Downloading and installing…" : "Install"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Async>
+
+      <div className="card" style={{ margin: "26px 0 22px" }}>
         <div className="row" style={{ justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div className="vstack" style={{ gap: 4, maxWidth: 640 }}>
             <b>Media &amp; files</b>
@@ -66,7 +110,7 @@ export default function Apps() {
       <Async state={apps}>
         {(list) =>
           list.length === 0 ? (
-            <div className="empty">Nothing installed yet — pick something from the store below.</div>
+            <div className="empty">Nothing installed yet — pick something from the store above.</div>
           ) : (
             <div className="grid cols-3">
               {list.map((a) => (
@@ -111,50 +155,6 @@ export default function Apps() {
             </div>
           )
         }
-      </Async>
-
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", margin: "26px 0 12px" }}>
-        <div className="section-title" style={{ margin: 0 }}>App store</div>
-        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          {categories.map((c) => (
-            <button key={c} className={"btn sm" + (c === cat ? " primary" : " ghost")} onClick={() => setCat(c)}>{c}</button>
-          ))}
-        </div>
-      </div>
-      <Async state={catalog}>
-        {(list) => (
-          <div className="grid cols-3">
-            {list.filter((c) => cat === "All" || c.category === cat).map((c) => {
-              const installed = installedIds.has(c.id);
-              const busy = installing.has(c.id);
-              return (
-                <div key={c.id} className="appcard">
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <span className="ico">{c.icon}</span>
-                    <Badge tone="gray">{c.category}</Badge>
-                  </div>
-                  <div>
-                    <div className="title">{c.name}</div>
-                    <div className="tag">{c.tagline}</div>
-                  </div>
-                  <div className="desc">{c.description}</div>
-                  <button
-                    className={"btn sm" + (installed ? "" : " primary")}
-                    disabled={installed || busy}
-                    onClick={async () => {
-                      // Downloading an app can take minutes.
-                      setInstalling((s) => new Set(s).add(c.id));
-                      await act(() => api.installApp({ catalog_id: c.id }), `Installed ${c.name}`);
-                      setInstalling((s) => { const n = new Set(s); n.delete(c.id); return n; });
-                    }}
-                  >
-                    {installed ? "✓ Installed" : busy ? "Downloading and installing…" : "Install"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </Async>
     </>
   );

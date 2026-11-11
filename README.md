@@ -16,15 +16,21 @@ shares, a Docker-style app store, users, and system health.
 
 ## What's inside
 
-| Area | What it does (mocked) |
+The dashboard is a desktop, in the style of ZimaOS/CasaOS: frosted-glass
+widgets (clock, system status, storage, network) and a grid of app icons over
+a wallpaper — the system's own tools first, then the installed apps, which
+open in a click and start, stop or uninstall from their ⋯ menu. Each tool
+opens as a window over the desktop.
+
+| Area | What it does (mocked by default; see the env vars below) |
 |------|------------------------|
-| **Dashboard** | Live CPU / memory rings, throughput sparklines, pool capacity, alerts |
+| **Monitor** | Live CPU / memory rings, throughput sparklines, pool capacity, alerts |
 | **Storage** | Physical disks with S.M.A.R.T. status, create/destroy pools (stripe/mirror/raidz1/raidz2), datasets with quotas & compression, scrub |
 | **Shares** | SMB & NFS shares bound to datasets, enable/disable, read-only/guest access |
-| **Apps** | A 12-app catalog (Jellyfin, Nextcloud, Immich, Pi-hole…) with install / start / stop / uninstall |
+| **App Store** | A 12-app catalog (Jellyfin, Nextcloud, Immich, Pi-hole…) with install / start / stop / uninstall |
 | **Users** | Users & groups, admin roles (real Unix/Samba accounts via `FERROUS_USERS=linux`) |
 | **Network** | Interfaces with addresses and traffic counters |
-| **System** | Host info, power actions (real via `FERROUS_POWER=systemd`), acknowledge-able notifications |
+| **Settings** | Host info, power actions (real via `FERROUS_POWER=systemd`), acknowledge-able notifications |
 
 ## Authentication
 

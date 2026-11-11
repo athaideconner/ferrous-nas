@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, UNAUTHORIZED_EVENT, type User } from "./lib/api";
 import { useAsync } from "./lib/hooks";
 import { Spinner, Toasts } from "./components/ui";
 import Auth from "./pages/Auth";
+import Desktop, { SYSTEM_APPS } from "./pages/Desktop";
 import Dashboard from "./pages/Dashboard";
 import Storage from "./pages/Storage";
 import Shares from "./pages/Shares";
@@ -12,24 +13,15 @@ import Users from "./pages/Users";
 import Network from "./pages/Network";
 import System from "./pages/System";
 
-const NAV = [
-  { to: "/dashboard", ico: "📊", label: "Dashboard" },
-  { to: "/storage", ico: "💽", label: "Storage" },
-  { to: "/shares", ico: "📁", label: "Shares" },
-  { to: "/apps", ico: "🧩", label: "Apps" },
-  { to: "/users", ico: "👥", label: "Users" },
-  { to: "/network", ico: "🌐", label: "Network" },
-  { to: "/system", ico: "⚙️", label: "System" },
-];
-
+/** Window titles for the pages that open over the desktop. */
 const TITLES: Record<string, string> = {
-  "/dashboard": "Dashboard",
+  "/dashboard": "Monitor",
   "/storage": "Storage",
   "/shares": "Shares",
-  "/apps": "Apps",
+  "/apps": "App Store",
   "/users": "Users & Groups",
   "/network": "Network",
-  "/system": "System",
+  "/system": "Settings",
 };
 
 type Phase = "loading" | "setup" | "login" | "ready";
@@ -74,97 +66,25 @@ export default function App() {
 
 function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => void }) {
   const loc = useLocation();
-  const title = TITLES[loc.pathname] ?? "FerrousNAS";
-  const tel = useAsync(api.telemetrySource);
-  const live = tel.data?.source === "linux";
-  // Each subsystem and its backend, for saying in the sidebar what's real.
-  const subsystems = tel.data
-    ? ([
-        ["apps", tel.data.apps],
-        ["storage", tel.data.pools],
-        ["shares", tel.data.shares],
-        ["users", tel.data.users],
-        ["power", tel.data.power],
-        ["network", tel.data.source],
-      ] as const)
-    : [];
-  const simulated = subsystems.filter(([, src]) => !src || src === "mock").map(([name]) => name);
-  const real = subsystems.map(([name]) => name).filter((name) => !simulated.includes(name));
-  const allSimulated = subsystems.length > 0 && simulated.length === subsystems.length;
+  const navigate = useNavigate();
+  const windowPath = TITLES[loc.pathname] ? loc.pathname : null;
+
+  // Esc closes the open window, back to the desktop.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && windowPath && !document.querySelector(".modal-backdrop")) navigate("/");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [windowPath, navigate]);
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="logo">🗄️</div>
-          <div>
-            <div className="name">FerrousNAS</div>
-            <div className="ver">control plane{allSimulated ? " · mock" : ""}</div>
-          </div>
-        </div>
-        <nav className="nav">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} className={({ isActive }) => (isActive ? "active" : "")}>
-              <span className="ico">{n.ico}</span>
-              {n.label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="foot">
-          {subsystems.length === 0 ? null : allSimulated ? (
-            <>
-              All operations are simulated.
-              <br />
-              No real disks are touched.
-            </>
-          ) : simulated.length === 0 ? (
-            <>
-              Storage, shares, apps, users, network and power are real: changes affect this machine.
-              <br />
-              Notifications are still sample data.
-            </>
-          ) : (
-            <>
-              Real: {real.join(", ")}.
-              <br />
-              Simulated: {simulated.join(", ")}.
-            </>
-          )}
-        </div>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <h1>{title}</h1>
-          <div className="spacer" />
-          <span className="pill" title={live ? "Reading real host telemetry (read-only)" : "Telemetry is simulated"}>
-            <span className="dot" style={{ background: live ? "var(--green)" : "var(--yellow)", boxShadow: `0 0 8px ${live ? "var(--green)" : "var(--yellow)"}` }} />
-            telemetry: {tel.data?.source ?? "…"}
-          </span>
-          <span className="pill">
-            <span className="dot" /> System healthy
-          </span>
-          {user && (
-            <span className="pill" title={user.is_admin ? "Administrator" : "Standard user"}>
-              {user.is_admin ? "🛡️" : "👤"} {user.username}
-            </span>
-          )}
-          <button
-            className="btn sm ghost"
-            onClick={async () => {
-              try {
-                await api.auth.logout();
-              } finally {
-                onSignedOut();
-              }
-            }}
-          >
-            Sign out
-          </button>
-        </header>
-        <div className="content">
+    <div className="desktop">
+      <TopBar user={user} onSignedOut={onSignedOut} />
+      <Desktop user={user} />
+      {windowPath && (
+        <AppWindow path={windowPath} onClose={() => navigate("/")}>
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/storage" element={<Storage />} />
             <Route path="/shares" element={<Shares />} />
@@ -172,11 +92,136 @@ function Shell({ user, onSignedOut }: { user: User | null; onSignedOut: () => vo
             <Route path="/users" element={<Users />} />
             <Route path="/network" element={<Network />} />
             <Route path="/system" element={<System />} />
-            <Route path="*" element={<div className="empty">Page not found</div>} />
           </Routes>
-        </div>
-      </main>
+        </AppWindow>
+      )}
+      {!windowPath && loc.pathname !== "/" && <Navigate to="/" replace />}
       <Toasts />
+    </div>
+  );
+}
+
+/** A page opened from the desktop: a large light window over the wallpaper. */
+function AppWindow({ path, onClose, children }: { path: string; onClose: () => void; children: ReactNode }) {
+  const app = SYSTEM_APPS.find((a) => a.to === path);
+  return (
+    <div className="window-backdrop" onClick={onClose}>
+      <section className="window" role="dialog" aria-label={TITLES[path]} onClick={(e) => e.stopPropagation()}>
+        <header className="window-bar">
+          {app && (
+            <span className="window-icon" style={{ background: `linear-gradient(145deg, ${app.tint}, ${app.tint}99)` }}>
+              {app.icon}
+            </span>
+          )}
+          <h1>{TITLES[path]}</h1>
+          <button className="window-close" aria-label="Close" onClick={onClose}>✕</button>
+        </header>
+        <div className="window-body">{children}</div>
+      </section>
+    </div>
+  );
+}
+
+function TopBar({ user, onSignedOut }: { user: User | null; onSignedOut: () => void }) {
+  const navigate = useNavigate();
+  const sys = useAsync(api.system, 60000);
+  const alerts = useAsync(api.alerts, 15000);
+  const [open, setOpen] = useState<"alerts" | "user" | null>(null);
+  const unacked = alerts.data?.filter((a) => !a.acknowledged) ?? [];
+  const toggle = (m: "alerts" | "user") => setOpen(open === m ? null : m);
+
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <div className="logo">🗄️</div>
+        <div>
+          <div className="name">FerrousNAS</div>
+          <div className="ver">{sys.data?.hostname ?? ""}</div>
+        </div>
+      </div>
+      <div className="spacer" />
+      <button className="glass round" title="App Store" onClick={() => navigate("/apps")}>🛍️</button>
+      <div className="pop-anchor">
+        <button className="glass round" title="Notifications" onClick={() => toggle("alerts")}>
+          🔔{unacked.length > 0 && <span className="count">{unacked.length}</span>}
+        </button>
+        {open === "alerts" && (
+          <div className="popover glass">
+            <div className="pop-title">Notifications</div>
+            {alerts.data?.length ? (
+              alerts.data.slice(0, 8).map((a) => (
+                <div key={a.id} className={"pop-item" + (a.acknowledged ? " done" : "")}>
+                  <span className={"lvl " + a.level} />
+                  <div>
+                    <div>{a.title}</div>
+                    <div className="pop-sub">{a.message}</div>
+                  </div>
+                  {!a.acknowledged && (
+                    <button
+                      className="pop-ack"
+                      onClick={async () => { await api.ackAlert(a.id).catch(() => {}); alerts.reload(); }}
+                    >
+                      ✓
+                    </button>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="pop-sub">Nothing new.</div>
+            )}
+          </div>
+        )}
+      </div>
+      <button className="glass round" title="Settings" onClick={() => navigate("/system")}>⚙️</button>
+      <div className="pop-anchor">
+        <button className="glass avatar" title={user?.username} onClick={() => toggle("user")}>
+          {(user?.full_name || user?.username || "?").slice(0, 1).toUpperCase()}
+        </button>
+        {open === "user" && (
+          <div className="popover glass">
+            <div className="pop-title">{user?.full_name || user?.username}</div>
+            <div className="pop-sub">{user?.is_admin ? "Administrator" : "Standard user"} · {user?.username}</div>
+            <SourcesNote />
+            <button
+              className="pop-btn"
+              onClick={async () => {
+                try {
+                  await api.auth.logout();
+                } finally {
+                  onSignedOut();
+                }
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}
+
+/** Which subsystems change this machine for real, and which are simulated. */
+function SourcesNote() {
+  const tel = useAsync(api.telemetrySource);
+  if (!tel.data) return null;
+  const subsystems = [
+    ["apps", tel.data.apps],
+    ["storage", tel.data.pools],
+    ["shares", tel.data.shares],
+    ["users", tel.data.users],
+    ["power", tel.data.power],
+    ["network", tel.data.source],
+  ] as const;
+  const simulated = subsystems.filter(([, src]) => !src || src === "mock").map(([name]) => name);
+  const real = subsystems.map(([name]) => name).filter((name) => !simulated.includes(name));
+  return (
+    <div className="pop-note">
+      {simulated.length === 0
+        ? "Everything here changes this machine for real (notifications are sample data)."
+        : simulated.length === subsystems.length
+          ? "Demo mode: everything is simulated; no real disks are touched."
+          : `Real: ${real.join(", ")}. Simulated: ${simulated.join(", ")}.`}
     </div>
   );
 }

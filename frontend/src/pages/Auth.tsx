@@ -57,7 +57,7 @@ export default function Auth({ mode, onDone }: { mode: "login" | "setup"; onDone
             autoFocus
             autoComplete="username"
             onChange={(e) => setUsername(e.target.value.replace(/\s/g, ""))}
-            placeholder="e.g. gorav"
+            placeholder="Your username"
           />
         </label>
 

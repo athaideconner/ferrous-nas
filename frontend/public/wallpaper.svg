@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <!-- FerrousNAS desktop wallpaper: dusk over layered ridges, with an
+       iron-oxide glow. Drawn for this project. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1426"/>
+      <stop offset="0.55" stop-color="#1b2140"/>
+      <stop offset="1" stop-color="#3a2238"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.68" cy="0.52" r="0.42">
+      <stop offset="0" stop-color="#f08a4b" stop-opacity="0.85"/>
+      <stop offset="0.35" stop-color="#d9603a" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#d9603a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="haze" cx="0.15" cy="0.15" r="0.6">
+      <stop offset="0" stop-color="#3b6fd8" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3b6fd8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="r1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d3657"/>
+      <stop offset="1" stop-color="#231f38"/>
+    </linearGradient>
+    <linearGradient id="r2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2a48"/>
+      <stop offset="1" stop-color="#17172b"/>
+    </linearGradient>
+    <linearGradient id="r3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d1f37"/>
+      <stop offset="1" stop-color="#0e1020"/>
+    </linearGradient>
+    <linearGradient id="r4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14162a"/>
+      <stop offset="1" stop-color="#080a15"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <rect width="1920" height="1080" fill="url(#haze)"/>
+  <rect width="1920" height="1080" fill="url(#sun)"/>
+  <circle cx="1305" cy="560" r="84" fill="#f6a066" opacity="0.9"/>
+  <path d="M0 640 C 220 560 380 600 560 540 C 760 470 900 560 1080 520 C 1260 480 1420 560 1600 500 C 1760 450 1860 480 1920 470 L1920 1080 L0 1080 Z" fill="url(#r1)"/>
+  <path d="M0 740 C 180 690 340 720 520 670 C 700 620 860 700 1040 660 C 1240 615 1400 690 1580 640 C 1740 600 1850 630 1920 615 L1920 1080 L0 1080 Z" fill="url(#r2)"/>
+  <path d="M0 840 C 200 790 380 830 580 780 C 780 730 940 800 1140 770 C 1340 740 1520 800 1720 760 C 1820 742 1880 748 1920 742 L1920 1080 L0 1080 Z" fill="url(#r3)"/>
+  <path d="M0 950 C 240 910 460 940 700 905 C 940 870 1140 930 1380 900 C 1600 872 1780 905 1920 890 L1920 1080 L0 1080 Z" fill="url(#r4)"/>
+  <path d="M560 540 C 760 470 900 560 1080 520 C 1260 480 1420 560 1600 500" fill="none" stroke="#f08a4b" stroke-opacity="0.25" stroke-width="2"/>
+</svg>
