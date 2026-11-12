@@ -1,0 +1,17 @@
+#!/bin/sh
+# After a console or SSH login: where the dashboard is. FerrousNAS is used
+# from a web browser on another computer; this console is only for
+# maintenance.
+ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+[ -n "$ip" ] || ip=$(hostname -I 2>/dev/null | cut -d' ' -f1)
+echo
+if ! systemctl is-active --quiet ferrous-nasd 2>/dev/null; then
+  echo "  The FerrousNAS service is not running. See: journalctl -u ferrous-nasd"
+elif [ -z "$ip" ]; then
+  echo "  FerrousNAS is running, but this machine has no network address yet."
+  echo "  Check its network connection, then open https://<its address>:4200."
+else
+  echo "  FerrousNAS is running. Open the dashboard in a web browser on another"
+  echo "  computer:   https://$ip:4200"
+  echo "  (It uses a self-signed certificate: accept the browser's warning.)"
+fi

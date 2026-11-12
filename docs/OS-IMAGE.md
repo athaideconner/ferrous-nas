@@ -86,7 +86,10 @@ objdump -T backend/target/release/ferrous-nasd | grep -o 'GLIBC_[0-9.]*' | sort 
 It must be 2.41 or lower.
 
 No admin is pre-seeded — visiting the dashboard on first boot runs its own setup
-screen, same as any other install. Flash `ferrous-nas.raw` to a disk with `dd`
+screen, same as any other install. The dashboard is at `https://<ip>:4200`
+(a self-signed certificate, so the browser warns once); the console's login
+screen and the message after logging in both show that address with the
+machine's real IP. Flash `ferrous-nas.raw` to a disk with `dd`
 to run on real hardware.
 
 By default the image has no Linux login account either (console or SSH). To
