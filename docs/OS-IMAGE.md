@@ -89,7 +89,17 @@ No admin is pre-seeded — visiting the dashboard on first boot runs its own set
 screen, same as any other install. The dashboard is at `https://<ip>:4200`
 (a self-signed certificate, so the browser warns once); the console's login
 screen and the message after logging in both show that address with the
-machine's real IP. Flash `ferrous-nas.raw` to a disk with `dd`
+machine's real IP.
+
+The machine's own screen shows the dashboard too: `ferrous-kiosk.service`
+runs Chromium full-screen under the cage kiosk compositor on tty1, as the
+unprivileged `ferrous-kiosk` account, drawing in software so it needs no GPU
+driver. It loads `http://localhost:4201`, a plain-HTTP listener the daemon
+opens on loopback only (`FERROUS_LOCAL_ADDR`), so there's no certificate
+warning and nothing off the machine can reach it. Ctrl+Alt+F2 switches to a
+text login and Ctrl+Alt+F1 back; closing the dashboard (Ctrl+W) reopens it.
+If the screen can't be used, tty1 gets its text login back. To turn it off:
+`sudo systemctl disable --now ferrous-kiosk`. Flash `ferrous-nas.raw` to a disk with `dd`
 to run on real hardware.
 
 By default the image has no Linux login account either (console or SSH). To

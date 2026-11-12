@@ -140,6 +140,7 @@ is a host-level task rather than something this repo builds on its own.
 | Env var | Default | Meaning |
 |---------|---------|---------|
 | `FERROUS_ADDR` | `0.0.0.0:4200` | Address the daemon binds |
+| `FERROUS_LOCAL_ADDR` | _(unset)_ | A second listener serving the same dashboard over plain HTTP, for a browser on the machine itself (the OS image's kiosk uses `127.0.0.1:4201`). Loopback addresses only; the daemon refuses to start otherwise. |
 | `FERROUS_AUTH` | _(unset → **on**)_ | Set to `off` to disable authentication. The daemon then refuses to bind anything but loopback. |
 | `FERROUS_STATE_DIR` | `/var/lib/ferrous-nas` | Where `auth.json` and the self-signed TLS cert/key are kept |
 | `FERROUS_COOKIE_SECURE` | _(auto)_ | Forced to `1` whenever built-in TLS is active. Set to `1` yourself when terminating TLS at a reverse proxy (`FERROUS_TLS=off`). |

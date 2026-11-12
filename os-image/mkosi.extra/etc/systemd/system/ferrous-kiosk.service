@@ -1,0 +1,35 @@
+[Unit]
+Description=FerrousNAS dashboard on this machine's screen
+# Takes over tty1 from the text login; Ctrl+Alt+F2 still has one. If the
+# kiosk can't run (no usable display), tty1 gets its text login back.
+After=systemd-user-sessions.service ferrous-nasd.service getty@tty1.service
+Wants=ferrous-nasd.service
+Conflicts=getty@tty1.service
+OnFailure=getty@tty1.service
+ConditionPathExists=/dev/tty0
+StartLimitIntervalSec=30
+StartLimitBurst=5
+
+[Service]
+User=ferrous-kiosk
+# A logind session on tty1 (see /etc/pam.d/ferrous-kiosk): it's what gives
+# this unprivileged user the display, keyboard and mouse.
+PAMName=ferrous-kiosk
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=XDG_SESSION_TYPE=wayland
+StateDirectory=ferrous-kiosk
+ExecStart=/usr/local/libexec/ferrous-kiosk
+# Closing the dashboard (Ctrl+W) just brings it back.
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -14,6 +14,9 @@ Type=exec
 # what stands between the network and these.
 Environment=FERROUS_ADDR=0.0.0.0:4200
 Environment=FERROUS_WEB_DIR=/usr/local/share/ferrous-nas/web
+# The same dashboard over plain HTTP, loopback only, for this machine's own
+# screen (ferrous-kiosk.service) — no certificate warning there.
+Environment=FERROUS_LOCAL_ADDR=127.0.0.1:4201
 Environment=RUST_LOG=info
 # Everything real (see the README's env var table):
 #   telemetry — this machine's own stats, disks and network

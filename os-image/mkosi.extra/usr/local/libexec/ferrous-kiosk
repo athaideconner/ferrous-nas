@@ -1,0 +1,31 @@
+#!/bin/sh
+# The dashboard on this machine's own screen: Chromium, full-screen, under
+# the cage kiosk compositor (run by ferrous-kiosk.service). It talks to the
+# daemon's loopback-only plain-HTTP listener (FERROUS_LOCAL_ADDR in
+# ferrous-nasd.service), so there is no certificate warning here.
+url=http://localhost:4201/
+
+# Wait for the daemon, so the screen doesn't open on a connection error.
+i=0
+until curl -fs -o /dev/null "${url}healthz" || [ "$i" -ge 120 ]; do
+    i=$((i + 1))
+    sleep 1
+done
+
+# No GPU acceleration, as in the installer: cage draws with pixman and
+# Chromium in software, so this works on any display, GPU driver or not.
+export WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 XCURSOR_THEME=Adwaita
+# -s: Ctrl+Alt+F2 etc. still switch to a text console.
+exec cage -s -- chromium \
+    --app="$url" \
+    --ozone-platform=wayland \
+    --disable-gpu \
+    --user-data-dir="$HOME/chromium" \
+    --no-first-run \
+    --no-default-browser-check \
+    --password-store=basic \
+    --noerrdialogs \
+    --hide-crash-restore-bubble \
+    --disable-features=Translate,MediaRouter \
+    --disable-component-update \
+    --check-for-update-interval=31536000

@@ -173,6 +173,31 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);
 
+    // Optionally, the same dashboard over plain HTTP on a loopback address,
+    // for a browser on this machine's own screen (the image's kiosk): no
+    // certificate warning there, and nothing off the machine can reach it.
+    // The session cookie stays Secure — browsers accept that from
+    // http://localhost, which they count as a secure context.
+    if let Ok(local) = env::var("FERROUS_LOCAL_ADDR") {
+        if !is_loopback(&local) {
+            tracing::error!(
+                "refusing to start: FERROUS_LOCAL_ADDR serves plain HTTP, so it may only be a \
+                 loopback address, e.g. 127.0.0.1:4201 (current: {local})"
+            );
+            exit(1);
+        }
+        let listener = tokio::net::TcpListener::bind(&local)
+            .await
+            .unwrap_or_else(|e| panic!("failed to bind {local}: {e}"));
+        tracing::info!("also serving this machine's own screen on http://{local}");
+        let local_app = app.clone();
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, local_app).await {
+                tracing::error!("local listener on {local} failed: {e}");
+            }
+        });
+    }
+
     let scheme = if tls_enabled { "https" } else { "http" };
     tracing::info!("FerrousNAS daemon v{VERSION} listening on {scheme}://{addr}");
     tracing::info!("API base: {scheme}://{addr}/api/v1  •  health: {scheme}://{addr}/healthz");
